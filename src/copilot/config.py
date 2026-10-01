@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     agent_max_attempts: int = 2
     """Model answers per agent before its deterministic check rejects the stage."""
     correction_max_rounds: int = 2
+    run_max_tokens: int = 60_000
+    """Cost governor (ADR-007): tokens one run may spend before it is stopped."""
+    run_max_calls: int = 8
+    """Model calls one run may make: 2 planner + 3 generator rounds x 2 attempts, worst case."""
     """Times the Generator may revise a notebook after review findings or execution
     errors, before the run is escalated to a human with a diagnostic report."""
 

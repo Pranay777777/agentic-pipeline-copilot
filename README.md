@@ -79,6 +79,33 @@ python -m copilot.agents review notebooks/orders_silver.py   # the Critic's rule
 # pull requests: PR_REPO and COPILOT_GITHUB_TOKEN in .env (fine-grained, that repo only)
 python -m copilot.pr check
 python -m copilot.agents run "..." --open-pr
+
+# record a run's model calls; replay them later with no model, key or network
+python -m copilot.agents run "..." --record runs/orders.cassette.jsonl
+python -m copilot.agents run "..." --replay runs/orders.cassette.jsonl
+```
+
+Every run has a budget - 8 model calls and 60 000 tokens by default
+(`RUN_MAX_CALLS`, `RUN_MAX_TOKENS`) - and stops hard when it is spent.
+
+## Use it from an MCP client
+
+`python -m copilot.mcp_server` serves the catalog and the notebook gates over
+stdio: `search_catalog`, `get_catalog_doc`, `review_notebook`,
+`generate_notebook_tests` and `validate_notebook` (sandboxed). No tool calls a
+model, writes a file or opens a pull request
+([ADR-007](docs/adr/0007-mcp-tools-replay-cost-governor.md)). For example, in
+an MCP client's server configuration:
+
+```json
+{
+  "mcpServers": {
+    "pipeline-copilot": {
+      "command": "/path/to/agentic-pipeline-copilot/.venv/bin/python",
+      "args": ["-m", "copilot.mcp_server"]
+    }
+  }
+}
 ```
 
 Every notebook passes a static gate (ruff, mypy) and runs on sample data in the
@@ -105,8 +132,8 @@ Notebooks are Databricks source files (`.py`).
 - [x] Sandboxed executor and Validator with a bounded self-correction loop ([ADR-005](docs/adr/0005-sandbox-validator-correction.md))
 - [x] Static-analysis gate and generated tests ([ADR-006](docs/adr/0006-static-gate-generated-tests-pull-requests.md))
 - [x] Pull-request tool (least privilege, never merges)
-- [ ] MCP tool layer
-- [ ] Deterministic replay, cost governor, agent eval suite and CI gate
+- [x] MCP tool layer, deterministic replay and a per-run cost governor ([ADR-007](docs/adr/0007-mcp-tools-replay-cost-governor.md))
+- [ ] Agent eval suite and CI gate
 - [ ] Threat model (OWASP Agentic and MCP Top 10), tracing, release
 
 ## Development
