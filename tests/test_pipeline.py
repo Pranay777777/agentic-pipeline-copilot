@@ -200,6 +200,9 @@ def test_cli_needs_docker_a_key_and_reports_provider_errors(
     missing = DockerSandbox("no-such-image:0", docker="no-such-docker-binary")
     assert main(["run", SPEC], llm=ScriptedLLM([]), sandbox=missing) == 2
     assert "python -m copilot.sandbox build" in capsys.readouterr().err
+    # The developer's .env may choose another provider and key; this test is about OpenRouter's.
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LLM_API_KEY", "")
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
     get_settings.cache_clear()
     assert main(["run", SPEC, "--no-sandbox"]) == 2
