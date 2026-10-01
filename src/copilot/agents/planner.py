@@ -49,11 +49,18 @@ LAYER_OF = {
 class PlanStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: str = Field(min_length=3, max_length=300)
-    table: str | None = None
-    """The source table this step reads, if any."""
-    columns: list[str] = Field(default_factory=list)
-    pattern: str
-    """The catalog pattern this step follows, e.g. pattern:module.transform-silver."""
+    table: str | None = Field(
+        default=None,
+        description="A source table this step reads, or the plan's target for the step "
+        "that writes it; null if the step works on an earlier step's result.",
+    )
+    columns: list[str] = Field(
+        default_factory=list, description="Source columns the step uses, exactly as listed."
+    )
+    pattern: str = Field(
+        description="The catalog pattern id this step follows, "
+        "e.g. pattern:module.transform-silver."
+    )
 
 
 class Plan(BaseModel):
@@ -62,7 +69,7 @@ class Plan(BaseModel):
     layer: Layer
     strategy: Strategy
     sources: list[str] = Field(min_length=1, max_length=6)
-    target: str = Field(pattern=IDENT, max_length=64)
+    target: str = Field(pattern=IDENT, max_length=64, description="The table this notebook writes.")
     keys: list[str] = Field(min_length=1)
     incremental_column: str | None = None
     steps: list[PlanStep] = Field(min_length=1, max_length=12)
@@ -92,9 +99,14 @@ def check_plan(plan: Plan, catalog: Catalog) -> list[str]:
     if expected is not None and plan.layer is not expected:
         errors.append(f"strategy '{plan.strategy}' belongs in {expected}, not {plan.layer}")
     for n, step in enumerate(plan.steps, 1):
-        if step.table is not None and step.table not in plan.sources:
-            errors.append(f"step {n} reads '{step.table}', which is not one of the sources")
-        columns = tables.get(step.table, frozenset()) if step.table else known
+        # The target is built from the sources, so a step on it uses source columns.
+        on_target = step.table == plan.target
+        if step.table is not None and step.table not in plan.sources and not on_target:
+            errors.append(
+                f"step {n}: table '{step.table}' is neither a source "
+                f"({', '.join(plan.sources)}) nor the target ('{plan.target}')"
+            )
+        columns = tables.get(step.table, frozenset()) if step.table and not on_target else known
         errors += [
             f"step {n}: column '{c}' is not in {step.table or 'the sources'}"
             for c in step.columns
@@ -116,7 +128,8 @@ columns, patterns and standards listed in the catalog excerpt - a program checks
 every name against the catalog and rejects anything that is not there.
 
 Rules:
-- sources: catalog table names (without the "table:" prefix).
+- sources: catalog table names (without the "table:" prefix); target: the table written.
+- a step's table is a source it reads, or the target for the step that writes it.
 - keys, incremental_column, step columns: columns of those tables, exactly as listed.
 - every step cites the catalog pattern id it follows (an id starting "pattern:").
 - standards: ids of the catalog standards the notebook must respect ("standard:...").

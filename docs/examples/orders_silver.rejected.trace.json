@@ -1,0 +1,48 @@
+{
+  "spec": "Load orders incrementally into Silver, one row per order_id, newest wins",
+  "status": "rejected",
+  "stage": "plan",
+  "reasons": [
+    "step 1 reads 'orders_silver', which is not one of the sources",
+    "step 1: column 'order_id' is not in orders_silver",
+    "step 1: column 'customer_id' is not in orders_silver",
+    "step 1: column 'order_status' is not in orders_silver",
+    "step 1: column 'purchased_at' is not in orders_silver",
+    "step 1: column 'delivered_at' is not in orders_silver",
+    "step 1: column 'updated_at' is not in orders_silver"
+  ],
+  "model_calls": 2,
+  "tokens": 11093,
+  "plan": null,
+  "attempts": [
+    {
+      "stage": "plan",
+      "number": 1,
+      "model": "cohere/north-mini-code:free",
+      "errors": [
+        "step 1 reads 'orders_silver', which is not one of the sources",
+        "step 1: column 'order_id' is not in orders_silver",
+        "step 1: column 'customer_id' is not in orders_silver",
+        "step 1: column 'order_status' is not in orders_silver",
+        "step 1: column 'purchased_at' is not in orders_silver",
+        "step 1: column 'delivered_at' is not in orders_silver",
+        "step 1: column 'updated_at' is not in orders_silver"
+      ]
+    },
+    {
+      "stage": "plan",
+      "number": 2,
+      "model": "cohere/north-mini-code:free",
+      "errors": [
+        "step 1 reads 'orders_silver', which is not one of the sources",
+        "step 1: column 'order_id' is not in orders_silver",
+        "step 1: column 'customer_id' is not in orders_silver",
+        "step 1: column 'order_status' is not in orders_silver",
+        "step 1: column 'purchased_at' is not in orders_silver",
+        "step 1: column 'delivered_at' is not in orders_silver",
+        "step 1: column 'updated_at' is not in orders_silver"
+      ]
+    }
+  ],
+  "reviews": []
+}
