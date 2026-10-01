@@ -36,7 +36,11 @@ Critic is not a model.
   the stage and the reasons, and every attempt is kept in the trace.
 - **Model: OpenRouter's free models** (`LLM_MODEL`, default `openrouter/free`)
   through a small OpenAI-compatible client with retries on 429/5xx and a cap
-  on output tokens. Tests use `ScriptedLLM`, so CI makes no model calls.
+  on output tokens. Free models are often reasoning models that can spend
+  the whole cap thinking and return no answer, so requests ask for low
+  reasoning effort (`LLM_REASONING_EFFORT`), the cap leaves room for it
+  (`LLM_MAX_TOKENS`, 8000), and an empty answer is retried and explained.
+  Tests use `ScriptedLLM`, so CI makes no model calls.
 
 ## Alternatives
 

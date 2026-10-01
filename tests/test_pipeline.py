@@ -84,8 +84,10 @@ def test_cli_run_writes_a_ready_notebook_and_its_trace(
     out, trace = repo / "nb" / "orders_silver.py", repo / "trace.json"
     argv = ["run", SPEC, "--out", str(out), "--trace", str(trace)]
     assert main(argv, llm=llm) == 0
-    printed = capsys.readouterr().out
-    assert "ready:" in printed and "(2 model call(s), 30 tokens)" in printed
+    captured = capsys.readouterr()
+    assert "ready:" in captured.out and "(2 model call(s), 30 tokens)" in captured.out
+    assert "plan #1: ok - scripted, 15 tokens" in captured.err
+    assert "generate #1: ok" in captured.err
     assert out.read_text(encoding="utf-8").startswith("# Databricks notebook source")
     assert json.loads(trace.read_text(encoding="utf-8"))["status"] == "ready"
     assert main(["review", str(out)]) == 0
@@ -97,7 +99,8 @@ def test_cli_reports_rejections(
     bad = json.dumps(appending(make_draft))
     llm = ScriptedLLM([json.dumps(make_plan()), bad, bad])
     assert main(["run", SPEC], llm=llm) == 1
-    assert "rejected at review (3 model call(s)" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "rejected at review (3 model call(s)" in err and "generate #1: ok" in err
     wrong = json.dumps(make_plan(keys=["nope"]))
     assert main(["plan", SPEC], llm=ScriptedLLM([wrong, wrong])) == 1
     assert "rejected at plan:" in capsys.readouterr().err

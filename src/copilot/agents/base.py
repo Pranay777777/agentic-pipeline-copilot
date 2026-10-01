@@ -62,6 +62,8 @@ class Exchange:
 
     stage: str
     attempts: list[Attempt] = field(default_factory=list)
+    on_attempt: Callable[[Attempt], None] | None = None
+    """Called as each answer is judged - the CLI uses it to show progress."""
 
 
 def extract_json(text: str) -> object:
@@ -95,16 +97,17 @@ def ask_json(
             errors = check(result)
         except ValueError as exc:  # JSONDecodeError and ValidationError are ValueErrors
             errors = _describe(exc)
-        exchange.attempts.append(
-            Attempt(
-                stage,
-                number,
-                completion.model,
-                tuple(errors),
-                completion.prompt_tokens,
-                completion.completion_tokens,
-            )
+        attempt = Attempt(
+            stage,
+            number,
+            completion.model,
+            tuple(errors),
+            completion.prompt_tokens,
+            completion.completion_tokens,
         )
+        exchange.attempts.append(attempt)
+        if exchange.on_attempt is not None:
+            exchange.on_attempt(attempt)
         if result is not None and not errors:
             return result
         conversation += [

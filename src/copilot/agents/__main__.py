@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from copilot.agents.base import Catalog, StageRejectedError
+from copilot.agents.base import Attempt, Catalog, StageRejectedError
 from copilot.agents.critic import review
 from copilot.agents.pipeline import Pipeline
 from copilot.catalog.model import read_snapshot
@@ -26,6 +26,16 @@ from copilot.llm import LLM, LLMError, OpenRouterLLM
 SNAPSHOT = Path("catalog/snapshot.jsonl")
 
 
+def progress(attempt: Attempt) -> None:
+    verdict = "ok" if not attempt.errors else f"sent back ({len(attempt.errors)} problem(s))"
+    tokens = attempt.prompt_tokens + attempt.completion_tokens
+    print(
+        f"  {attempt.stage} #{attempt.number}: {verdict} - {attempt.model}, {tokens} tokens",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def make_llm(settings: Settings) -> LLM:
     return OpenRouterLLM(
         settings.openrouter_api_key,
@@ -33,6 +43,7 @@ def make_llm(settings: Settings) -> LLM:
         base_url=settings.llm_base_url,
         timeout=settings.llm_timeout_s,
         max_tokens=settings.llm_max_tokens,
+        reasoning_effort=settings.llm_reasoning_effort or None,
     )
 
 
@@ -72,7 +83,9 @@ def main(argv: list[str] | None = None, llm: LLM | None = None) -> int:
         if args.command == "plan":
             print(pipeline.planner.plan(args.spec).model_dump_json(indent=2))
             return 0
-        result = pipeline.run(args.spec)
+        note = f"running with {settings.llm_model} - free models can take minutes..."
+        print(note, file=sys.stderr, flush=True)
+        result = pipeline.run(args.spec, on_attempt=progress)
     except StageRejectedError as exc:
         print(f"rejected at {exc.stage}:", *exc.errors, sep="\n- ", file=sys.stderr)
         return 1

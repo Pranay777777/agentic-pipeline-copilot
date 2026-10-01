@@ -52,9 +52,10 @@ class OpenRouterLLM:
         api_key: SecretStr,
         model: str,
         base_url: str = "https://openrouter.ai/api/v1",
-        timeout: float = 60.0,
-        max_tokens: int = 3000,
+        timeout: float = 180.0,
+        max_tokens: int = 8000,
         max_retries: int = 3,
+        reasoning_effort: str | None = "low",
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -64,6 +65,9 @@ class OpenRouterLLM:
             )
         self.model = model
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
+        """Asks reasoning models to think briefly: free ones otherwise spend the whole
+        token cap on hidden reasoning and return no answer. Ignored by other models."""
         self.max_retries = max_retries
         self._sleep = sleep
         self._http = httpx.Client(
@@ -84,6 +88,8 @@ class OpenRouterLLM:
             "temperature": 0.1,
             "max_tokens": self.max_tokens,
         }
+        if self.reasoning_effort:
+            body["reasoning"] = {"effort": self.reasoning_effort, "exclude": True}
         for attempt in range(self.max_retries + 1):
             last = attempt == self.max_retries
             try:
