@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,20 @@ class Settings(BaseSettings):
     app_env: Literal["local", "ci", "staging", "prod"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     database_url: str = "postgresql://app:app@localhost:5432/app"
+
+    # Model provider (ADR-004): OpenRouter's free models by default.
+    openrouter_api_key: SecretStr = SecretStr("")
+    llm_model: str = "openrouter/free"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_timeout_s: float = 60.0
+    llm_max_tokens: int = 3000
+    """Caps every completion, so one request can never cost more than this."""
+
+    # Agents (ADR-002: everything bounded).
+    agent_max_attempts: int = 2
+    """Model answers per agent before its deterministic check rejects the stage."""
+    critic_max_rounds: int = 1
+    """Times the Generator may revise a notebook the Critic rejected."""
 
 
 @lru_cache
