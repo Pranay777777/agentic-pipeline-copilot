@@ -39,8 +39,15 @@ class Settings(BaseSettings):
     # Agents (ADR-002: everything bounded).
     agent_max_attempts: int = 2
     """Model answers per agent before its deterministic check rejects the stage."""
-    critic_max_rounds: int = 1
-    """Times the Generator may revise a notebook the Critic rejected."""
+    correction_max_rounds: int = 2
+    """Times the Generator may revise a notebook after review findings or execution
+    errors, before the run is escalated to a human with a diagnostic report."""
+
+    # Sandbox (ADR-005).
+    sandbox_image: str = "copilot-sandbox:0.1"
+    sandbox_timeout_s: float = 240.0
+    sandbox_memory: str = "2g"
+    sandbox_cpus: float = 2.0
 
 
 @lru_cache

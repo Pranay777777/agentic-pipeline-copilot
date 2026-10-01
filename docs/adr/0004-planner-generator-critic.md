@@ -32,7 +32,8 @@ Critic is not a model.
   `append`, storage paths as literals, credentials as literals. Findings go
   back to the Generator verbatim, for a bounded number of rounds.
 - **Bounded.** `AGENT_MAX_ATTEMPTS` (default 2) answers per agent and
-  `CRITIC_MAX_ROUNDS` (default 1) revisions; then the run is *rejected* with
+  `CRITIC_MAX_ROUNDS` (default 1) revisions - since ADR-005 one
+  `CORRECTION_MAX_ROUNDS` budget shared with execution errors; then the run is *rejected* with
   the stage and the reasons, and every attempt is kept in the trace.
 - **Model: OpenRouter's free models** (`LLM_MODEL`, default `openrouter/free`)
   through a small OpenAI-compatible client with retries on 429/5xx and a cap
