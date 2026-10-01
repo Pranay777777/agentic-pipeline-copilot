@@ -88,6 +88,20 @@ python -m copilot.agents run "..." --replay runs/orders.cassette.jsonl
 Every run has a budget - 8 model calls and 60 000 tokens by default
 (`RUN_MAX_CALLS`, `RUN_MAX_TOKENS`) - and stops hard when it is spent.
 
+## How good is it? The eval suite
+
+`evals/specs.json` holds 50 plain-English specs with the plan each should
+produce. Each is recorded once against a real model and then replayed - no
+model, no key, no network - so CI gates every push on them: a spec that used
+to pass and now fails, or a pass rate under 80%, fails the build
+([ADR-008](docs/adr/0008-eval-suite-replayed-gate.md)).
+
+```bash
+python -m copilot.evals record --limit 6   # live, in batches (free tiers allow ~20 requests/day)
+python -m copilot.evals gate               # replay all recorded specs; fail on regressions
+python -m copilot.evals render             # docs/images/eval-report.svg, recovery.svg
+```
+
 ## Use it from an MCP client
 
 `python -m copilot.mcp_server` serves the catalog and the notebook gates over
@@ -133,7 +147,7 @@ Notebooks are Databricks source files (`.py`).
 - [x] Static-analysis gate and generated tests ([ADR-006](docs/adr/0006-static-gate-generated-tests-pull-requests.md))
 - [x] Pull-request tool (least privilege, never merges)
 - [x] MCP tool layer, deterministic replay and a per-run cost governor ([ADR-007](docs/adr/0007-mcp-tools-replay-cost-governor.md))
-- [ ] Agent eval suite and CI gate
+- [x] Agent eval suite (50 specs, recorded once, replayed in CI) and its regression gate ([ADR-008](docs/adr/0008-eval-suite-replayed-gate.md))
 - [ ] Threat model (OWASP Agentic and MCP Top 10), tracing, release
 
 ## Development

@@ -74,3 +74,4 @@ Thumbs.db
 # Agent run traces
 runs/
 notebooks/
+evals/report.json

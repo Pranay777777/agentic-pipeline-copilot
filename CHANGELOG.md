@@ -24,6 +24,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Deterministic replay: `--record` writes a run's model calls to a JSONL cassette keyed by request hash; `--replay` answers from it with no model; a recorded real run is replayed in CI.
 - Cost governor: every run is capped at `RUN_MAX_CALLS` model calls and `RUN_MAX_TOKENS` tokens and stops hard (`rejected` at stage `budget`).
 - Planner check: the target may not overwrite a catalog table.
+- Agent eval suite: 50 specs with expected plans, recorded in batches and replayed; `python -m copilot.evals gate` runs in CI and fails on regressions or a pass rate under 80%; `render` writes the README images (ADR-008).
+- Cassettes record each call's wall-clock seconds and are created only when the first answer arrives; 503 "high demand" responses back off like rate limits.
 
 ### Fixed
 - Sample data dropped catalog columns that carry a description (e.g. `customers.customer_id`).
