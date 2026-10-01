@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 8000
     """Caps every completion, so one request can never cost more than this. Room for
     a reasoning model's hidden thinking plus the JSON answer."""
+    llm_fallback_models: str = ""
+    """Comma-separated models OpenRouter falls back to when LLM_MODEL is rate limited."""
+    llm_max_retries: int = 3
     llm_reasoning_effort: Literal["low", "medium", "high", ""] = "low"
     """How long reasoning models may think; empty sends nothing."""
 

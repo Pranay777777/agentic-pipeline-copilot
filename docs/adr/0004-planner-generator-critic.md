@@ -40,6 +40,8 @@ Critic is not a model.
   the whole cap thinking and return no answer, so requests ask for low
   reasoning effort (`LLM_REASONING_EFFORT`), the cap leaves room for it
   (`LLM_MAX_TOKENS`, 8000), and an empty answer is retried and explained.
+  Free models are also rate limited upstream, so `LLM_FALLBACK_MODELS` lets
+  OpenRouter switch models on a 429, and rate-limit retries wait 5-15-45 s.
   Tests use `ScriptedLLM`, so CI makes no model calls.
 
 ## Alternatives

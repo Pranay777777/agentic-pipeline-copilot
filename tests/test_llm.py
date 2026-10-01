@@ -63,6 +63,37 @@ def test_rate_limits_are_retried_honouring_retry_after() -> None:
     assert sleeps == [7.0, 2.0]
 
 
+def test_rate_limits_without_retry_after_back_off_for_longer() -> None:
+    sleeps: list[float] = []
+    llm = client(*[httpx.Response(429)] * 3, httpx.Response(200, json=OK), sleeps=sleeps)
+    assert llm.complete([]).text == '{"a": 1}'
+    assert sleeps == [5.0, 15.0, 45.0]
+
+
+def test_fallback_models_are_sent_and_upstream_detail_is_reported() -> None:
+    seen: list[httpx.Request] = []
+    limited = {
+        "error": {
+            "message": "Provider returned error",
+            "metadata": {"provider_name": "Google AI Studio", "raw": "rate-limited upstream"},
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(400, json=limited)
+
+    llm = OpenRouterLLM(
+        SecretStr("k"),
+        "a:free",
+        transport=httpx.MockTransport(handler),
+        fallbacks=["b:free", "", "a:free"],
+    )
+    with pytest.raises(LLMError, match=r"\[Google AI Studio: rate-limited upstream\]"):
+        llm.complete([])
+    assert json.loads(seen[0].content)["models"] == ["a:free", "b:free"]
+
+
 def test_upstream_errors_inside_a_200_are_retried_then_reported() -> None:
     error = {"error": {"code": 502, "message": "Provider returned error"}}
     llm = client(*[httpx.Response(200, json=error)] * 4)

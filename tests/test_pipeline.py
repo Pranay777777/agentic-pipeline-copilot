@@ -133,7 +133,9 @@ def test_cli_needs_a_key_and_reports_provider_errors(
 def test_make_llm_uses_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-x")
     monkeypatch.setenv("LLM_MODEL", "some/model:free")
+    monkeypatch.setenv("LLM_FALLBACK_MODELS", "b:free, c:free")
     llm = make_llm(Settings())
     assert isinstance(llm, OpenRouterLLM) and llm.model == "some/model:free"
+    assert llm.fallbacks == ["b:free", "c:free"]
     with pytest.raises(LLMError):
         make_llm(Settings(openrouter_api_key="", _env_file=None))  # type: ignore[call-arg,arg-type]

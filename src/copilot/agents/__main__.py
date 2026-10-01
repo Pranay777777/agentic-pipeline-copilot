@@ -44,6 +44,8 @@ def make_llm(settings: Settings) -> LLM:
         timeout=settings.llm_timeout_s,
         max_tokens=settings.llm_max_tokens,
         reasoning_effort=settings.llm_reasoning_effort or None,
+        fallbacks=[m.strip() for m in settings.llm_fallback_models.split(",")],
+        max_retries=settings.llm_max_retries,
     )
 
 
