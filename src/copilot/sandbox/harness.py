@@ -1,0 +1,255 @@
+"""Runs a notebook inside the sandbox container - and only there (ADR-005).
+
+Copied into each job directory and started as `python /job/harness.py` in a
+container with no network, a read-only root filesystem and hard limits. It
+must not import copilot: the container has only PySpark and Delta.
+
+It reads /job/job.json, loads the sample tables, runs the notebook's cells in
+order in one namespace (with `spark` and a `dbutils` stand-in), checks the
+target table against the plan's expectations, and writes /out/result.json.
+Executing code with `exec` is acceptable here precisely because this process
+is the isolation boundary's inside; the host never executes generated code.
+
+Pure helpers (cell splitting, cell execution, dbutils) are unit-tested on the
+host; the Spark parts run only in the container.
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import socket
+import time
+import traceback
+from pathlib import Path
+from typing import Any
+
+JOB = Path("/job")
+OUT = Path("/out")
+SEPARATOR = "# COMMAND ----------"
+TITLE = "# DBTITLE 1,"
+SPARK_TYPES = {
+    "string": "STRING",
+    "int64": "BIGINT",
+    "int32": "INT",
+    "float64": "DOUBLE",
+    "bool": "BOOLEAN",
+}
+
+
+def split_cells(source: str) -> list[tuple[str, str, int]]:
+    """(title, code, first line in the file) for every code cell of a Databricks notebook."""
+    cells: list[tuple[str, str, int]] = []
+    chunk: list[str] = []
+    start = 1
+
+    def flush(lines: list[str], first: int) -> None:
+        if lines and lines[0].startswith("# Databricks notebook source"):
+            lines, first = lines[1:], first + 1
+        while lines and not lines[0].strip():
+            lines, first = lines[1:], first + 1
+        while lines and not lines[-1].strip():
+            lines = lines[:-1]
+        if not lines or all(line.startswith("# MAGIC") for line in lines if line.strip()):
+            return
+        title = f"cell {len(cells) + 1}"
+        if lines[0].startswith(TITLE):
+            title = lines[0][len(TITLE) :].strip()
+        cells.append((title, "\n".join(lines), first))
+
+    for number, line in enumerate(source.splitlines(), 1):
+        if line.strip() == SEPARATOR:
+            flush(chunk, start)
+            chunk, start = [], number + 1
+        else:
+            chunk.append(line)
+    flush(chunk, start)
+    return cells
+
+
+def first_line(exc: BaseException) -> str:
+    """The exception's message without the query plan Spark appends."""
+    text = str(exc).strip().split("\n", 1)[0].rstrip(";")
+    return " ".join(text.split())[:600]
+
+
+def run_cells(cells: list[tuple[str, str, int]], namespace: dict[str, Any]) -> dict[str, Any]:
+    """Run cells in order; stop at the first failure and say where, in notebook lines."""
+    done: list[str] = []
+    for n, (title, code, first) in enumerate(cells, 1):
+        filename = f"<cell {n}>"
+        try:
+            exec(compile(code, filename, "exec"), namespace)  # noqa: S102 - inside the sandbox
+        except Exception as exc:
+            line = None
+            for frame in traceback.extract_tb(exc.__traceback__):
+                if frame.filename == filename and frame.lineno is not None:
+                    line = first + frame.lineno - 1
+            return {
+                "ran": done,
+                "error": {
+                    "stage": "cell",
+                    "cell": n,
+                    "title": title,
+                    "line": line,
+                    "kind": type(exc).__name__,
+                    "message": first_line(exc),
+                },
+            }
+        done.append(title)
+    return {"ran": done, "error": None}
+
+
+class Widgets:
+    """dbutils.widgets with the values the Validator chose."""
+
+    def __init__(self, values: dict[str, str]) -> None:
+        self.values = values
+
+    def text(self, name: str, default: str = "", label: str | None = None) -> None:
+        self.values.setdefault(name, default)
+
+    def get(self, name: str) -> str:
+        if name not in self.values:
+            raise KeyError(f"widget '{name}' was never defined")
+        return self.values[name]
+
+
+class Secrets:
+    def get(self, scope: str, key: str) -> str:
+        raise PermissionError("secrets are not available in the sandbox")
+
+
+class DBUtils:
+    def __init__(self, values: dict[str, str]) -> None:
+        self.widgets = Widgets(values)
+        self.secrets = Secrets()
+
+
+def probe() -> dict[str, Any]:  # pragma: no cover - container only
+    """What this process can reach - the evidence that the sandbox is isolated."""
+
+    def attempt(action: Any) -> str:
+        try:
+            action()
+        except Exception as exc:
+            return f"blocked ({type(exc).__name__})"
+        return "allowed"
+
+    def connect() -> None:
+        socket.create_connection(("1.1.1.1", 53), timeout=3).close()
+
+    return {
+        "network": attempt(connect),
+        "dns": attempt(lambda: socket.gethostbyname("pypi.org")),
+        "write_job": attempt(lambda: (JOB / "planted").write_text("x")),
+        "write_root": attempt(lambda: Path("/etc/planted").write_text("x")),
+        "write_out": attempt(lambda: (OUT / "probe").write_text("x")),
+        "write_tmp": attempt(lambda: Path("/tmp/probe").write_text("x")),  # noqa: S108
+        "uid": getattr(os, "getuid", lambda: -1)(),  # Linux in the container; typed on Windows
+        "env_secrets": sorted(
+            k for k in os.environ if any(w in k.upper() for w in ("KEY", "TOKEN", "SECRET"))
+        ),
+    }
+
+
+def spark_session() -> Any:  # pragma: no cover - container only
+    # Imported by name: PySpark exists only in the container image.
+    spark_sql = importlib.import_module("pyspark.sql")
+    jars = ",".join(sorted(str(p) for p in Path("/opt/sandbox/jars").glob("*.jar")))
+    return (
+        spark_sql.SparkSession.builder.master("local[2]")
+        .appName("copilot-sandbox")
+        .config("spark.jars", jars)
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config(
+            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
+        .config("spark.sql.warehouse.dir", "/tmp/warehouse")  # noqa: S108
+        .config("spark.local.dir", "/tmp/spark")  # noqa: S108
+        .config("spark.driver.host", "127.0.0.1")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.ui.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "2")
+        .getOrCreate()
+    )
+
+
+def ddl(columns: list[list[str]]) -> str:
+    return ", ".join(f"`{name}` {SPARK_TYPES.get(kind, 'STRING')}" for name, kind in columns)
+
+
+def load_tables(spark: Any, job: dict[str, Any]) -> None:  # pragma: no cover - container only
+    for table in job["tables"]:
+        rows = json.loads((JOB / "data" / f"{table['source']}.json").read_text(encoding="utf-8"))
+        frame = spark.createDataFrame(rows, ddl(table["columns"]))
+        frame.write.format("delta").saveAsTable(table["name"])
+    target = job["target"]
+    spark.createDataFrame([], ddl(job["tables"][0]["columns"])).write.format("delta").saveAsTable(
+        target
+    )
+
+
+def check(spark: Any, job: dict[str, Any]) -> list[dict[str, Any]]:  # pragma: no cover
+    target, keys = job["target"], job["keys"]
+    frame = spark.table(target)
+    if "is_current" in frame.columns:
+        frame = frame.where("is_current")
+    rows = frame.count()
+    checks = [{"name": "target_not_empty", "passed": rows > 0, "detail": f"{rows} rows"}]
+    missing = [k for k in keys if k not in frame.columns]
+    if missing:
+        checks.append(
+            {"name": "keys_present", "passed": False, "detail": f"missing {', '.join(missing)}"}
+        )
+        return checks
+    if job.get("unique_keys"):
+        dupes = frame.groupBy(*keys).count().where("count > 1").count()
+        checks.append(
+            {
+                "name": "one_row_per_key",
+                "passed": dupes == 0,
+                "detail": f"{dupes} {'/'.join(keys)} value(s) appear more than once",
+            }
+        )
+    nulls = frame.where(" OR ".join(f"`{k}` IS NULL" for k in keys)).count()
+    checks.append(
+        {"name": "keys_not_null", "passed": nulls == 0, "detail": f"{nulls} row(s) with a null key"}
+    )
+    return checks
+
+
+def main() -> None:  # pragma: no cover - container only
+    job = json.loads((JOB / "job.json").read_text(encoding="utf-8"))
+    result: dict[str, Any] = {"ran": [], "error": None, "checks": []}
+    if job.get("mode") == "probe":
+        result["probe"] = probe()
+    else:
+        started = time.monotonic()
+        try:
+            spark = spark_session()
+            load_tables(spark, job)
+        except Exception as exc:
+            message = first_line(exc)
+            result["error"] = {"stage": "setup", "kind": type(exc).__name__, "message": message}
+        else:
+            namespace: dict[str, Any] = {"spark": spark, "dbutils": DBUtils(dict(job["params"]))}
+            source = (JOB / "notebook.py").read_text(encoding="utf-8")
+            result.update(run_cells(split_cells(source), namespace))
+            if result["error"] is None:
+                try:
+                    result["checks"] = check(spark, job)
+                except Exception as exc:
+                    message = " ".join(str(exc).split())[:600]
+                    result["error"] = {
+                        "stage": "check",
+                        "kind": type(exc).__name__,
+                        "message": message,
+                    }
+        result["seconds"] = round(time.monotonic() - started, 1)
+    (OUT / "result.json").write_text(json.dumps(result), encoding="utf-8")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
