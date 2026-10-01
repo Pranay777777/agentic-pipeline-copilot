@@ -35,6 +35,8 @@ def test_the_container_is_started_with_every_isolation_flag(tmp_path: Path) -> N
         "--pids-limit 512",
         "--tmpfs /tmp:rw,size=1g",
         "--rm",
+        "--hostname localhost",
+        "--env SPARK_LOCAL_IP=127.0.0.1",
     ):
         assert flag in flags, flag
     assert f"{(tmp_path / 'job').resolve()}:/job:ro" in command
@@ -42,6 +44,8 @@ def test_the_container_is_started_with_every_isolation_flag(tmp_path: Path) -> N
     assert command[-3:] == ["img:1", "python", "/job/harness.py"]
     assert not any(c.startswith("--env-file") for c in command)
     assert [c for c in command if c.startswith("HOME=")] == ["HOME=/tmp"]
+    envs = [command[i + 1] for i, c in enumerate(command) if c == "--env"]
+    assert all(not any(w in e.upper() for w in ("KEY", "TOKEN", "SECRET")) for e in envs)
 
 
 class Recorder:
