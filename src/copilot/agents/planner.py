@@ -88,6 +88,11 @@ def check_plan(plan: Plan, catalog: Catalog) -> list[str]:
         if source not in tables:
             errors.append(f"source '{source}' is not a catalog table ({', '.join(sorted(tables))})")
     known = frozenset().union(*(tables.get(s, frozenset()) for s in plan.sources))
+    if plan.target in plan.sources or plan.target in tables:
+        errors.append(
+            f"target '{plan.target}' would overwrite a catalog table - name it for its layer, "
+            f"e.g. '{plan.sources[0]}_{plan.layer}'"
+        )
     for key in plan.keys:
         if key not in known:
             errors.append(f"key '{key}' is not a column of {', '.join(plan.sources)}")

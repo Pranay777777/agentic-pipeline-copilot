@@ -107,3 +107,14 @@ def test_a_step_may_write_the_target_using_source_columns(
     raw["steps"][2]["columns"] = ["order_id", "invented"]
     errors = check_plan(Plan.model_validate(raw), catalog)
     assert errors == ["step 3: column 'invented' is not in orders_silver"]
+
+
+def test_the_target_may_not_overwrite_a_catalog_table(
+    catalog: Catalog, make_plan: MakePlan
+) -> None:
+    errors = check_plan(Plan.model_validate(make_plan(target="orders")), catalog)
+    assert errors == [
+        "target 'orders' would overwrite a catalog table - name it for its layer, "
+        "e.g. 'orders_silver'"
+    ]
+    assert check_plan(Plan.model_validate(make_plan(target="customers")), catalog)
