@@ -26,6 +26,10 @@ RUN python /opt/sandbox/warm_delta.py \
     && ls /opt/sandbox/jars/*.jar \
     && rm -rf /root/.ivy2 /tmp/*
 
+# The static gate and the generated tests (ADR-006) run in here too, so the
+# generated code is never linted, type-checked or tested on the host.
+RUN pip install "ruff==0.16.9" "mypy==2.3.1" "pytest==9.1.1"
+
 RUN useradd --uid 1000 --create-home sandbox
 USER 1000
 WORKDIR /tmp

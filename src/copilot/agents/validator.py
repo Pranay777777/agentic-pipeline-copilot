@@ -1,10 +1,12 @@
-"""Validator (step 70): run the notebook on sample data in the sandbox, report structured errors.
+"""Validator (steps 70, 72): gate, then run the notebook on sample data in the sandbox.
 
 The fourth typed boundary of ADR-002, and the only one that consults
 reality. It writes a job directory - the notebook, the in-container harness,
 sample rows for every source, the widget values and the plan's expectations
 - hands it to the sandbox, and turns what comes back into errors the
-Generator can act on: which cell, which line, which exception, or which
+Generator can act on: which ruff or mypy finding on which notebook line (the
+static gate runs first, in the container - ADR-006), which cell, which
+line, which exception, or which
 expectation the output broke (one row per key, keys not null, a non-empty
 target).
 
@@ -41,7 +43,7 @@ def parameters(plan: Plan) -> dict[str, str]:
 @dataclass(frozen=True)
 class ExecutionError:
     stage: str
-    """setup, cell, check, expectation or sandbox."""
+    """static, setup, cell, check, expectation or sandbox."""
     kind: str
     message: str
     cell: int | None = None
@@ -54,6 +56,8 @@ class ExecutionError:
             where = f"cell {self.cell} '{self.title}'" + (
                 f" (notebook line {self.line})" if self.line else ""
             )
+        elif self.line:
+            where = f"{self.stage} (notebook line {self.line})"
         return f"{where}: {self.kind}: {self.message}"
 
 
@@ -61,6 +65,8 @@ class ExecutionError:
 class ValidationReport:
     errors: tuple[ExecutionError, ...]
     checks: tuple[dict[str, Any], ...] = ()
+    static: tuple[dict[str, Any], ...] = ()
+    """ruff/mypy findings; any of them means the notebook never reached Spark."""
     ran: tuple[str, ...] = ()
     seconds: float = 0.0
     timed_out: bool = False
@@ -116,7 +122,11 @@ def report(execution: Execution, result: dict[str, Any] | None) -> ValidationRep
         last = " ".join(tail.strip().splitlines()[-3:])[:600] or f"exit code {execution.exit_code}"
         error = ExecutionError("sandbox", "NoResult", last)
         return ValidationReport((error,), seconds=execution.seconds, log_tail=tail)
-    errors: list[ExecutionError] = []
+    static = tuple(result.get("static") or [])
+    errors = [
+        ExecutionError("static", f"{s['tool']} {s['code']}", s["message"], line=s.get("line"))
+        for s in static
+    ]
     if result.get("error"):
         e = result["error"]
         errors.append(
@@ -131,6 +141,7 @@ def report(execution: Execution, result: dict[str, Any] | None) -> ValidationRep
     return ValidationReport(
         tuple(errors),
         checks,
+        static,
         tuple(result.get("ran") or []),
         float(result.get("seconds") or execution.seconds),
         log_tail=tail,

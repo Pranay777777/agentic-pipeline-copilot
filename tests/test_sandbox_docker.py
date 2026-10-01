@@ -1,4 +1,4 @@
-"""The real sandbox: isolation, a Delta MERGE notebook, a broken one, the time limit.
+"""The real sandbox: isolation, a Delta MERGE, the static gate, a broken notebook, the time limit.
 
 Needs Docker and the image (`python -m copilot.sandbox build`); skipped unless
 COPILOT_SANDBOX_IMAGE names it. CI's sandbox job builds the image and runs these.
@@ -72,3 +72,19 @@ def test_a_notebook_that_does_not_finish_is_killed(
     plan, text = notebook(make_plan, draft)
     report = Validator(DockerSandbox(IMAGE, Limits(timeout_s=20)), catalog).validate(plan, text)
     assert report.timed_out and str(report.errors[0]).startswith("sandbox: Timeout")
+
+
+def test_a_static_finding_stops_the_notebook_before_spark(
+    catalog: Catalog, make_plan: Make, make_draft: Make
+) -> None:
+    draft = make_draft()
+    draft["cells"][1]["code"] = draft["cells"][1]["code"].replace(
+        "new_rows.withColumn", "new_row.withColumn"
+    )
+    plan, text = notebook(make_plan, draft)
+    report = Validator(DockerSandbox(IMAGE), catalog).validate(plan, text)
+    assert report.ran == () and report.checks == ()
+    kinds = {(e.stage, e.kind) for e in report.errors}
+    assert ("static", "ruff F821") in kinds and ("static", "mypy name-defined") in kinds
+    line = report.errors[0].line
+    assert line is not None and "new_row.withColumn" in text.splitlines()[line - 1]

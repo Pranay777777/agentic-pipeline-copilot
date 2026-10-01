@@ -72,3 +72,17 @@ def test_timeouts_and_missing_results_become_errors() -> None:
         {"error": {"stage": "setup", "kind": "Py4JError", "message": "no JVM"}, "checks": []},
     )
     assert str(setup.errors[0]) == "setup: Py4JError: no JVM"
+
+
+def test_static_findings_become_errors_with_their_notebook_line() -> None:
+    finding = {"tool": "ruff", "code": "F821", "line": 14, "message": "Undefined name `x`"}
+    gated = report(
+        Execution(0, "", "", False, 3.0),
+        {"ran": [], "error": None, "checks": [], "static": [finding]},
+    )
+    assert not gated.passed and gated.static == (finding,) and gated.ran == ()
+    assert str(gated.errors[0]) == "static (notebook line 14): ruff F821: Undefined name `x`"
+    crashed = {"tool": "mypy", "code": "crashed", "line": None, "message": "exit 2"}
+    assert str(report(Execution(0, "", "", False, 1.0), {"static": [crashed]}).errors[0]) == (
+        "static: mypy crashed: exit 2"
+    )

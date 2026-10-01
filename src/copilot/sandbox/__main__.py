@@ -1,7 +1,7 @@
 """Sandbox CLI.
 
-    python -m copilot.sandbox build [--image copilot-sandbox:0.1]   # the pinned image
-    python -m copilot.sandbox check [--image copilot-sandbox:0.1]   # prove the isolation
+    python -m copilot.sandbox build [--image copilot-sandbox:0.2]   # the pinned image
+    python -m copilot.sandbox check [--image copilot-sandbox:0.2]   # prove the isolation
 
 `check` starts the real container with the real flags and a probe instead of
 a notebook, and fails unless every escape it tries is blocked - the evidence
