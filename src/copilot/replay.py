@@ -3,7 +3,8 @@
 A cassette is a JSONL file, one line per call:
 
     {"key": "<sha256 of the request>", "prompt": "<last message, abridged>",
-     "text": "...", "model": "...", "prompt_tokens": 1200, "completion_tokens": 340}
+     "text": "...", "model": "...", "prompt_tokens": 1200, "completion_tokens": 340,
+     "seconds": 4.2}
 
 The key is the SHA-256 of the request's messages (canonical JSON), so replay
 answers exactly the request that was recorded: if a prompt, the catalog or a
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -34,15 +36,20 @@ def request_key(messages: list[Message]) -> str:
 
 
 class RecordingLLM:
-    """Passes each call through and appends it to the cassette (a new file per run)."""
+    """Passes each call through and appends it to the cassette (a new file per run).
+
+    The file is created with the first answer, so a run that fails before any
+    answer leaves no empty cassette behind.
+    """
 
     def __init__(self, inner: LLM, path: Path) -> None:
         self.inner, self.path = inner, path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("", encoding="utf-8")
+        path.unlink(missing_ok=True)
 
     def complete(self, messages: list[Message]) -> Completion:
+        started = time.monotonic()
         completion = self.inner.complete(messages)
+        seconds = round(time.monotonic() - started, 2)
         last = messages[-1]["content"] if messages else ""
         entry = {
             "key": request_key(messages),
@@ -51,7 +58,9 @@ class RecordingLLM:
             "model": completion.model,
             "prompt_tokens": completion.prompt_tokens,
             "completion_tokens": completion.completion_tokens,
+            "seconds": seconds,
         }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8", newline="\n") as cassette:
             cassette.write(json.dumps(entry, ensure_ascii=False) + "\n")
         return completion

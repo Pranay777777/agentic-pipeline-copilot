@@ -42,6 +42,7 @@ def test_a_recorded_run_replays_identically_with_no_model(
     ).run(SPEC)
     entries = [json.loads(line) for line in tape.read_text("utf-8").splitlines()]
     assert len(entries) == 2 and entries[0]["prompt"] and entries[0]["prompt_tokens"] == 10
+    assert all(isinstance(e["seconds"], float) for e in entries)
     replay = ReplayLLM(tape)
     again = Pipeline(
         replay, catalog, validator=Validator(sandbox_factory(results["passed"]), catalog)
@@ -61,6 +62,15 @@ def test_only_the_recorded_request_gets_an_answer(tmp_path: Path) -> None:
     with pytest.raises(LLMError, match=r"no recorded answer .* record it again"):
         replay.complete([{"role": "user", "content": "plan it differently"}])
     assert request_key(ask) == request_key([{"content": "plan it", "role": "user"}])
+
+
+def test_a_failed_recording_leaves_no_cassette(tmp_path: Path) -> None:
+    tape = tmp_path / "tape.jsonl"
+    tape.write_text("stale\n", encoding="utf-8")
+    recorder = RecordingLLM(ScriptedLLM([]), tape)
+    with pytest.raises(LLMError):
+        recorder.complete([{"role": "user", "content": "x"}])
+    assert not tape.exists()
 
 
 def test_missing_and_broken_cassettes_are_errors(tmp_path: Path) -> None:
