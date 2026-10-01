@@ -30,6 +30,10 @@ class LLMError(RuntimeError):
     """The provider could not produce a response."""
 
 
+class EmptyCompletionError(LLMError):
+    """A 200 with no text - free models do this under load, so it is retried."""
+
+
 @dataclass(frozen=True)
 class Completion:
     text: str
@@ -107,7 +111,12 @@ class OpenRouterLLM:
                     self._sleep(float(2**attempt))
                     continue
                 raise LLMError(f"provider returned {status}: {str(error.get('message'))[:300]}")
-            return _parse(payload, self.model)
+            try:
+                return _parse(payload, self.model)
+            except EmptyCompletionError:
+                if last:
+                    raise
+                self._sleep(float(2**attempt))
         raise LLMError("retries exhausted")  # pragma: no cover - the loop returns or raises
 
 
@@ -128,11 +137,20 @@ def _reason(response: httpx.Response) -> str:
 
 def _parse(payload: Any, model: str) -> Completion:
     try:
-        text = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
+        choice = payload["choices"][0]
+        message = choice["message"]
+        text = message.get("content")
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
         raise LLMError("unexpected response shape") from exc
     if not isinstance(text, str) or not text.strip():
-        raise LLMError("the model returned an empty message")
+        finish = choice.get("finish_reason")
+        detail = f"finish_reason={finish}"
+        if message.get("reasoning"):
+            detail += ", it returned reasoning only"
+        hint = ""
+        if finish == "length":
+            hint = " - raise LLM_MAX_TOKENS or choose a model that does not reason at length"
+        raise EmptyCompletionError(f"the model returned an empty message ({detail}){hint}")
     usage = payload.get("usage") or {}
     return Completion(
         text=text,

@@ -80,9 +80,6 @@ def test_bad_bodies_are_errors() -> None:
         client(httpx.Response(200, text="<html>")).complete([])
     with pytest.raises(LLMError, match="unexpected response shape"):
         client(httpx.Response(200, json={"choices": []})).complete([])
-    empty = {"choices": [{"message": {"content": "  "}}]}
-    with pytest.raises(LLMError, match="empty message"):
-        client(httpx.Response(200, json=empty)).complete([])
     with pytest.raises(LLMError, match="400: Bad Request"):
         client(httpx.Response(400, text="nope")).complete([])
 
@@ -110,3 +107,19 @@ def test_scripted_llm_replays_and_records() -> None:
     assert llm.calls[0] == [{"role": "user", "content": "a"}]
     with pytest.raises(LLMError, match="no more responses"):
         llm.complete([])
+
+
+def test_empty_messages_are_retried_then_explained() -> None:
+    empty = {"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]}
+    assert client(httpx.Response(200, json=empty), httpx.Response(200, json=OK)).complete([]).text
+    reasoning = {
+        "choices": [
+            {"message": {"content": None, "reasoning": "thinking..."}, "finish_reason": "length"}
+        ]
+    }
+    llm = client(*[httpx.Response(200, json=reasoning)] * 4)
+    with pytest.raises(LLMError) as caught:
+        llm.complete([])
+    message = str(caught.value)
+    assert "finish_reason=length, it returned reasoning only" in message
+    assert "raise LLM_MAX_TOKENS" in message
