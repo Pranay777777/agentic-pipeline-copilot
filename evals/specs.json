@@ -1,0 +1,617 @@
+{
+  "version": 1,
+  "specs": [
+    {
+      "id": "orders-dedup-1",
+      "spec": "Load orders incrementally into Silver, one row per order_id, newest wins",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-dedup-2",
+      "spec": "Build a Silver orders table that keeps only the latest version of each order by updated_at",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-dedup-3",
+      "spec": "Silver orders: deduplicate on order_id keeping the most recently updated row",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-cdc-1",
+      "spec": "Apply order changes as a CDC merge on order_id, using updated_at to pick new changes",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-cdc-2",
+      "spec": "Upsert changed orders into the target with a Delta MERGE keyed by order_id",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-incr-1",
+      "spec": "Append only new orders since the last updated_at watermark",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "orders"
+        ]
+      }
+    },
+    {
+      "id": "orders-full-1",
+      "spec": "Fully reload the orders table every run, no watermark",
+      "expect": {
+        "strategy": "full_reload",
+        "sources": [
+          "orders"
+        ]
+      }
+    },
+    {
+      "id": "orders-scd2-1",
+      "spec": "Keep the full history of order status changes as SCD Type 2 in Silver, one current row per order_id",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-scd2-2",
+      "spec": "Track how each order's status changes over time with valid-from and valid-to dates",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "orders-dedup-4",
+      "spec": "Clean the orders feed into Silver: drop duplicate order_id rows, keep the newest",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "orders"
+        ],
+        "keys": [
+          "order_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-scd2-1",
+      "spec": "Customer dimension as SCD Type 2 in Silver keyed by customer_id",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-scd2-2",
+      "spec": "Keep the history of customer address and contact changes, one current row per customer",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-dedup-1",
+      "spec": "Silver customers with one row per customer_id, latest update wins",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-dedup-2",
+      "spec": "Deduplicate the customers feed on customer_id keeping the most recent record",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-cdc-1",
+      "spec": "Merge customer changes into the target by customer_id using updated_at",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-full-1",
+      "spec": "Reload the full customers table on every run",
+      "expect": {
+        "strategy": "full_reload",
+        "sources": [
+          "customers"
+        ]
+      }
+    },
+    {
+      "id": "customers-incr-1",
+      "spec": "Append newly updated customers since the last watermark",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "customers"
+        ]
+      }
+    },
+    {
+      "id": "customers-scd2-3",
+      "spec": "Slowly changing dimension type 2 for customers so analysts can see past values",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-dedup-3",
+      "spec": "Latest snapshot of every customer in Silver, one row each",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "customers-cdc-2",
+      "spec": "Upsert customers with a Delta MERGE on customer_id",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "customers"
+        ],
+        "keys": [
+          "customer_id"
+        ]
+      }
+    },
+    {
+      "id": "items-incr-1",
+      "spec": "Load order items incrementally: only rows updated since the last run",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "order_items"
+        ]
+      }
+    },
+    {
+      "id": "items-incr-2",
+      "spec": "Append new order item rows using updated_at as the watermark",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "order_items"
+        ]
+      }
+    },
+    {
+      "id": "items-dedup-1",
+      "spec": "Silver order items: one row per order_item_id, newest update wins",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "order_items"
+        ],
+        "keys": [
+          "order_item_id"
+        ]
+      }
+    },
+    {
+      "id": "items-dedup-2",
+      "spec": "Deduplicate order_items on order_item_id keeping the latest version",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "order_items"
+        ],
+        "keys": [
+          "order_item_id"
+        ]
+      }
+    },
+    {
+      "id": "items-cdc-1",
+      "spec": "CDC merge of order items keyed by order_item_id",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "order_items"
+        ],
+        "keys": [
+          "order_item_id"
+        ]
+      }
+    },
+    {
+      "id": "items-cdc-2",
+      "spec": "Upsert changed order items into the target with MERGE on order_item_id, watermark updated_at",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "order_items"
+        ],
+        "keys": [
+          "order_item_id"
+        ]
+      }
+    },
+    {
+      "id": "items-full-1",
+      "spec": "Rebuild the order items table from scratch each run",
+      "expect": {
+        "strategy": "full_reload",
+        "sources": [
+          "order_items"
+        ]
+      }
+    },
+    {
+      "id": "items-dedup-3",
+      "spec": "Clean order items into Silver with exactly one row per order_item_id",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "order_items"
+        ],
+        "keys": [
+          "order_item_id"
+        ]
+      }
+    },
+    {
+      "id": "products-scd2-1",
+      "spec": "Product dimension as SCD Type 2 in Silver keyed by product_id",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "products-scd2-2",
+      "spec": "Keep the history of product category and weight changes, one current row per product",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "products-dedup-1",
+      "spec": "Silver products with one row per product_id, latest update wins",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "products-dedup-2",
+      "spec": "Deduplicate products on product_id keeping the newest record",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "products-cdc-1",
+      "spec": "Merge product changes into the target by product_id",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "products-full-1",
+      "spec": "Full reload of the products table every run",
+      "expect": {
+        "strategy": "full_reload",
+        "sources": [
+          "products"
+        ]
+      }
+    },
+    {
+      "id": "products-incr-1",
+      "spec": "Append products updated since the last watermark",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "products"
+        ]
+      }
+    },
+    {
+      "id": "products-scd2-3",
+      "spec": "Type 2 slowly changing dimension for products with validity dates",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "products"
+        ],
+        "keys": [
+          "product_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-scd2-1",
+      "spec": "Seller dimension as SCD Type 2 in Silver keyed by seller_id",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-scd2-2",
+      "spec": "Track sellers moving city or state over time, one current row per seller",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-dedup-1",
+      "spec": "Silver sellers with one row per seller_id, latest update wins",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-dedup-2",
+      "spec": "Deduplicate the sellers feed on seller_id keeping the most recent row",
+      "expect": {
+        "strategy": "dedup_latest",
+        "layer": "silver",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-cdc-1",
+      "spec": "Upsert sellers with a Delta MERGE keyed by seller_id",
+      "expect": {
+        "strategy": "cdc_merge",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "sellers-full-1",
+      "spec": "Reload all sellers on every run",
+      "expect": {
+        "strategy": "full_reload",
+        "sources": [
+          "sellers"
+        ]
+      }
+    },
+    {
+      "id": "sellers-incr-1",
+      "spec": "Append sellers updated since the last run",
+      "expect": {
+        "strategy": "incremental",
+        "sources": [
+          "sellers"
+        ]
+      }
+    },
+    {
+      "id": "sellers-scd2-3",
+      "spec": "Slowly changing dimension type 2 for sellers so past locations stay queryable",
+      "expect": {
+        "strategy": "scd2",
+        "layer": "silver",
+        "sources": [
+          "sellers"
+        ],
+        "keys": [
+          "seller_id"
+        ]
+      }
+    },
+    {
+      "id": "gold-star-1",
+      "spec": "Gold star schema: an order items fact joined to products and sellers dimensions",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "gold-star-2",
+      "spec": "Build a Gold sales star schema from order items, orders, products and sellers",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "gold-star-3",
+      "spec": "Gold layer fact table of order item revenue with product and seller dimensions",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "gold-star-4",
+      "spec": "Dimensional model in Gold for revenue by product category and seller state",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "gold-star-5",
+      "spec": "Star schema in Gold with a fact of order items and a customer dimension via orders",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    },
+    {
+      "id": "gold-star-6",
+      "spec": "Gold reporting model: order item facts with date of purchase from orders and product details",
+      "expect": {
+        "strategy": "star_schema",
+        "layer": "gold"
+      }
+    }
+  ]
+}

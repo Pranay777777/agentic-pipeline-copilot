@@ -66,6 +66,9 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: pytest
+      # Replays every recorded eval spec - no model, no key, no network (ADR-008).
+      - name: Agent eval gate
+        run: python -m copilot.evals gate
       - uses: actions/upload-artifact@v7
         if: always()
         with:
