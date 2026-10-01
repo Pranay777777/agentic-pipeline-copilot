@@ -26,7 +26,7 @@ from pathlib import Path
 
 from copilot.agents.base import Attempt, Catalog, StageRejectedError
 from copilot.agents.critic import review
-from copilot.agents.pipeline import Pipeline, diagnostic_report
+from copilot.agents.pipeline import Pipeline, Run, diagnostic_report
 from copilot.agents.validator import Validator
 from copilot.catalog.model import read_snapshot
 from copilot.config import Settings, get_settings
@@ -73,6 +73,21 @@ def make_sandbox(settings: Settings) -> DockerSandbox:
         timeout_s=settings.sandbox_timeout_s,
     )
     return DockerSandbox(settings.sandbox_image, limits)
+
+
+def evidence(result: Run) -> str:
+    """One line of what the last round proved - the gates a reviewer would ask about."""
+    last = result.rounds[-1]
+    parts = [f"review: {'passed' if last.review.passed else 'findings'}"]
+    if last.validation is not None:
+        checks = last.validation.checks
+        passed = sum(bool(c["passed"]) for c in checks)
+        parts += [
+            f"static: {len(last.validation.static) or 'clean'}",
+            f"sandbox: {len(last.validation.ran)} cell(s) in {last.validation.seconds:.0f}s",
+            f"tests: {passed}/{len(checks)} passed",
+        ]
+    return "  " + " · ".join(parts)
 
 
 def main(
@@ -182,6 +197,7 @@ def main(
         print(f"diagnostic report: {report}", file=sys.stderr)
         return 1
     assert result.notebook is not None and result.plan is not None
+    print(evidence(result), file=sys.stderr)
     out = args.out or Path("notebooks") / f"{result.plan.target}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(result.notebook, encoding="utf-8", newline="\n")

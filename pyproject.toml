@@ -21,6 +21,7 @@ dev = [
   "pre-commit>=4.6.2",
   "pip-audit>=2.10.1",
   "types-PyYAML>=6.0",
+  "pillow>=11",
 ]
 
 [build-system]
