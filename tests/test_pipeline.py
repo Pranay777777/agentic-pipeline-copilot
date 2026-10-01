@@ -226,3 +226,6 @@ def test_factories_use_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(gemini, OpenRouterLLM) and gemini.provider == "openai"
     with pytest.raises(LLMError):
         make_llm(Settings(openrouter_api_key="", llm_api_key="", _env_file=None))  # type: ignore[call-arg,arg-type]
+    monkeypatch.setenv("LLM_API_KEY", "")
+    with pytest.raises(LLMError, match="LLM_API_KEY"):  # the OpenRouter key is never sent to Google
+        make_llm(Settings())

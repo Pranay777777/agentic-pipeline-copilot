@@ -193,3 +193,9 @@ def test_openai_compatible_providers_get_only_standard_fields() -> None:
     assert "reasoning" not in body and "models" not in body
     assert "x-title" not in seen[0].headers and seen[0].headers["authorization"] == "Bearer g-key"
     assert str(seen[0].url).endswith("/v1beta/openai/chat/completions")
+
+
+def test_googles_list_wrapped_errors_are_reported() -> None:
+    wrapped = [{"error": {"code": 400, "message": "API key not valid.", "status": "INVALID"}}]
+    with pytest.raises(LLMError, match=r"400: API key not valid\."):
+        client(httpx.Response(400, json=wrapped)).complete([])

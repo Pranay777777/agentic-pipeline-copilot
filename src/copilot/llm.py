@@ -161,9 +161,15 @@ def _backoff(response: httpx.Response, attempt: int) -> float:
 
 
 def _reason(response: httpx.Response) -> str:
-    """The provider's message, plus the upstream detail OpenRouter nests in metadata."""
+    """The provider's message, plus the upstream detail OpenRouter nests in metadata.
+
+    Google's OpenAI-compatible endpoint wraps its error object in a one-item list.
+    """
     try:
-        error = response.json()["error"]
+        body = response.json()
+        if isinstance(body, list) and body:
+            body = body[0]
+        error = body["error"]
         message = str(error["message"])
     except (ValueError, KeyError, TypeError):
         return response.reason_phrase
