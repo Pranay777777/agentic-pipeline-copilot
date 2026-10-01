@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import ast
 import json
-import re
 from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from copilot.agents.base import Catalog, Exchange, ask_json
-from copilot.agents.planner import IDENT, Plan
+from copilot.agents.planner import Plan
 from copilot.catalog.model import Kind
 from copilot.llm import LLM
 
@@ -42,7 +41,8 @@ class Cell(BaseModel):
 class NotebookDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
     parameters: list[str] = Field(default_factory=list)
-    """Notebook widgets, read into variables of the same name before any cell runs."""
+    """Notebook widgets, read into variables of the same name before any cell runs.
+    Names follow the contract in `allowed_parameters`."""
     cells: list[Cell] = Field(min_length=1, max_length=20)
 
 
@@ -68,12 +68,20 @@ def render(draft: NotebookDraft, plan: Plan) -> str:
     return HEADER + "\n" + SEPARATOR.join(cells) + "\n"
 
 
+def allowed_parameters(plan: Plan) -> list[str]:
+    """The parameter contract (ADR-005): one table name per source, the target, the
+    watermark and the key columns - what the control plane passes, and what the
+    Validator supplies in the sandbox."""
+    return [f"{s}_table" for s in plan.sources] + ["target_table", "watermark", "key_columns"]
+
+
 def check_draft(draft: NotebookDraft, plan: Plan, catalog: Catalog) -> list[str]:
     """Everything wrong with the draft before review. Empty means it can go to the Critic."""
     errors: list[str] = []
+    contract = allowed_parameters(plan)
     for p in draft.parameters:
-        if not _is_ident(p):
-            errors.append(f"parameter '{p}' is not a lowercase identifier")
+        if p not in contract:
+            errors.append(f"parameter '{p}' is not in the contract ({', '.join(contract)})")
     if len(set(draft.parameters)) != len(draft.parameters):
         errors.append("parameters repeat a name")
     allowed = set(plan.patterns) | {f"table:{s}" for s in plan.sources}
@@ -92,10 +100,6 @@ def check_draft(draft: NotebookDraft, plan: Plan, catalog: Catalog) -> list[str]
     return errors
 
 
-def _is_ident(name: str) -> bool:
-    return re.fullmatch(IDENT, name) is not None
-
-
 SYSTEM = """You are the Generator of a pipeline copilot for a metadata-driven lakehouse.
 Write the PySpark cells of ONE Databricks notebook that implements the plan.
 
@@ -104,7 +108,10 @@ The runtime provides `spark` and `dbutils`. Rules a program enforces:
   "table:..." for its sources, or "standard:..." ids); every plan pattern is cited;
 - each cell is valid Python on its own;
 - table names, paths and keys come from parameters (listed in "parameters", read for
-  you into variables of the same name) - never as string literals;
+  you into variables of the same name) - never as string literals. Allowed names:
+  "<source>_table" for each source (e.g. orders_table), "target_table", "watermark"
+  (a string; compare it as an integer epoch) and "key_columns" (comma-separated);
+- the target table already exists: MERGE into it with DeltaTable.forName(spark, target_table);
 - no collect(), toPandas() or take() without a small explicit limit; no select("*");
   no credentials; writes are idempotent (Delta MERGE on the key, never a blind append);
 - use only the columns the catalog lists.
@@ -134,12 +141,14 @@ class Generator:
         """Write the notebook, or revise `previous` to resolve the Critic's `review`."""
         user = (
             f"# Plan\n\n{plan.model_dump_json(indent=2)}\n\n"
+            f"# Parameters you may declare\n\n{', '.join(allowed_parameters(plan))}\n\n"
             f"# Catalog documents the plan uses\n\n{_context(plan, self.catalog)}"
         )
         if previous is not None:
             user += (
                 f"\n\n# Your previous notebook\n\n{previous.model_dump_json(indent=2)}"
-                "\n\n# The Critic rejected it for these reasons - fix every one\n\n"
+                "\n\n# It was sent back for these reasons (review findings, or errors from "
+                "running it on sample data in the sandbox) - fix every one\n\n"
                 + "\n".join(f"- {r}" for r in review)
             )
         messages = [

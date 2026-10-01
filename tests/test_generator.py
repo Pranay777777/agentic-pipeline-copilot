@@ -22,8 +22,8 @@ def test_the_notebook_is_databricks_source_that_parses(make_plan: Make, make_dra
     text = render(NotebookDraft.model_validate(make_draft()), plan)
     assert text.startswith("# Databricks notebook source\n# MAGIC %md\n# MAGIC # orders_silver")
     assert text.count("# COMMAND ----------") == 4  # intro, parameters, three cells
-    assert 'dbutils.widgets.text("bronze_table", "")' in text
-    assert 'silver_table = dbutils.widgets.get("silver_table")' in text
+    assert 'dbutils.widgets.text("orders_table", "")' in text
+    assert 'target_table = dbutils.widgets.get("target_table")' in text
     assert "# DBTITLE 1,MERGE into Silver\n# Follows: pattern:module.ingest-cdc" in text
     ast.parse(text)
     no_params = render(NotebookDraft.model_validate(make_draft(parameters=[])), plan)
@@ -45,7 +45,10 @@ def test_drafts_that_drift_from_the_plan_are_rejected(
     errors = check_draft(
         NotebookDraft.model_validate(raw), Plan.model_validate(make_plan()), catalog
     )
-    assert "parameter 'Table' is not a lowercase identifier" in errors
+    assert (
+        "parameter 'Table' is not in the contract "
+        "(orders_table, target_table, watermark, key_columns)" in errors
+    )
     assert "parameters repeat a name" in errors
     assert any(e.startswith("cell 1 'Read new Bronze rows' line 1:") for e in errors)
     assert "cell 2 cites 'pattern:module.transform-scd2', which the plan did not choose" in errors
