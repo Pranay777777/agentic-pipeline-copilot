@@ -45,9 +45,11 @@ def progress(attempt: Attempt) -> None:
 
 
 def make_llm(settings: Settings) -> LLM:
-    key = settings.llm_api_key if settings.llm_api_key.get_secret_value() else None
+    key = settings.llm_api_key
+    if not key.get_secret_value() and settings.llm_provider == "openrouter":
+        key = settings.openrouter_api_key  # never sent to any other provider
     return OpenRouterLLM(
-        key or settings.openrouter_api_key,
+        key,
         settings.llm_model,
         base_url=settings.llm_base_url,
         timeout=settings.llm_timeout_s,
