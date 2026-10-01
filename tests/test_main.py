@@ -7,8 +7,8 @@ import logging
 
 import pytest
 
-from app.__main__ import main
-from app.logging import JsonFormatter, configure_logging
+from copilot.__main__ import main
+from copilot.logging import JsonFormatter, configure_logging
 
 
 def test_configure_logging_installs_json_handler() -> None:
@@ -40,7 +40,7 @@ def test_main_logs_startup(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("APP_ENV", "ci")
-    from app.config import get_settings
+    from copilot.config import get_settings
 
     get_settings.cache_clear()
     main()

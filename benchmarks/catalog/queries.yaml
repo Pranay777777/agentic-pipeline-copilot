@@ -1,0 +1,28 @@
+# Questions the Planner agent asks before writing a notebook, with the catalog
+# documents that answer them. Written against the snapshot of
+# metadata-driven-lakehouse v1.0.0 (catalog/snapshot.jsonl).
+queries:
+  - {id: q01, text: "What columns does the customers table have?", relevant: [table:customers]}
+  - {id: q02, text: "How do we keep history when a customer's city changes?", relevant: [pattern:module.transform-scd2, pattern:adr.0005]}
+  - {id: q03, text: "Deduplicate source rows so the newest version of each key wins", relevant: [pattern:module.transform-silver]}
+  - {id: q04, text: "How should a fact join a dimension member that has not arrived yet?", relevant: [pattern:module.transform-gold, standard:notebook.gold-joins-on-surrogate-keys-with-an-unknown-member]}
+  - {id: q05, text: "Load only new rows since the last run using a watermark", relevant: [pattern:module.ingest-incremental]}
+  - {id: q06, text: "Apply change data capture inserts updates and deletes with MERGE", relevant: [pattern:module.ingest-cdc]}
+  - {id: q07, text: "Where do rows that fail quality checks go?", relevant: [pattern:module.quality-quarantine, pattern:adr.0010]}
+  - {id: q08, text: "Data quality severity levels: warn, fail, quarantine", relevant: [pattern:adr.0009, pattern:module.quality-engine]}
+  - {id: q09, text: "Mask personal data such as email and phone numbers", relevant: [pattern:module.privacy, pattern:adr.0017]}
+  - {id: q10, text: "How are secrets and passwords handled in pipelines?", relevant: [pattern:adr.0018, standard:notebook.no-credentials-in-code]}
+  - {id: q11, text: "Can a notebook call collect on a large dataframe?", relevant: [standard:notebook.no-unbounded-collect-or-topandas]}
+  - {id: q12, text: "Is it fine to hardcode table names or paths in a notebook?", relevant: [standard:notebook.configuration-comes-from-metadata-never-literals]}
+  - {id: q13, text: "Re-running a load must not duplicate rows", relevant: [standard:notebook.writes-are-idempotent]}
+  - {id: q14, text: "Price and freight value for each order item", relevant: [table:order_items]}
+  - {id: q15, text: "Which columns describe a seller's location?", relevant: [table:sellers]}
+  - {id: q16, text: "A new column appears in the source schema - what happens?", relevant: [pattern:adr.0007]}
+  - {id: q17, text: "Compaction, Z-ordering and vacuum for Delta tables", relevant: [pattern:module.maintenance, pattern:adr.0015]}
+  - {id: q18, text: "Rewind a source to an earlier point in time and reload", relevant: [pattern:module.replay, pattern:adr.0016]}
+  - {id: q19, text: "Emit column-level lineage events", relevant: [pattern:module.lineage, pattern:adr.0012]}
+  - {id: q20, text: "What tests must a generated notebook include?", relevant: [standard:notebook.every-notebook-ships-with-tests]}
+  - {id: q21, text: "Product category and weight in grams", relevant: [table:products]}
+  - {id: q22, text: "Order status with purchase and delivery timestamps", relevant: [table:orders]}
+  - {id: q23, text: "Which lint and type-check rules does the code follow?", relevant: [standard:lakehouse.lint]}
+  - {id: q24, text: "Should transformations run on Spark or Arrow?", relevant: [pattern:adr.0003, pattern:adr.0014]}
