@@ -9,6 +9,7 @@ from typing import Any
 
 from copilot.agents.base import Catalog
 from copilot.agents.planner import Plan
+from copilot.agents.testgen import generate_tests
 from copilot.agents.validator import Validator, parameters, report
 from copilot.sandbox import harness
 from copilot.sandbox.runner import DockerSandbox, Execution
@@ -43,7 +44,7 @@ def test_the_job_holds_notebook_harness_data_and_expectations(
     Validator(DockerSandbox(), catalog, sample_rows=8).job(plan, "x = 1\n", tmp_path / "job")
     job = json.loads((tmp_path / "job" / "job.json").read_text("utf-8"))
     assert job["target"] == "orders_silver" and job["keys"] == ["order_id"]
-    assert job["unique_keys"] is True and job["tables"][0]["name"] == "bronze_orders"
+    assert "unique_keys" not in job and job["tables"][0]["name"] == "bronze_orders"
     assert (
         job["params"]
         == parameters(plan)
@@ -56,6 +57,8 @@ def test_the_job_holds_notebook_harness_data_and_expectations(
     )
     data = json.loads((tmp_path / "job" / "data" / "orders.json").read_text("utf-8"))
     assert len(data) == 8
+    tests = (tmp_path / "job" / "test_notebook.py").read_text("utf-8")
+    assert tests == generate_tests(plan, catalog) and "def test_one_row_per_key" in tests
     harness_copy = (tmp_path / "job" / "harness.py").read_text("utf-8")
     assert harness_copy == Path(harness.__file__).read_text("utf-8")
 

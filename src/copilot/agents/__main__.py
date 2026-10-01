@@ -147,7 +147,12 @@ def main(
     out = args.out or Path("notebooks") / f"{result.plan.target}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(result.notebook, encoding="utf-8", newline="\n")
-    print(f"{result.status}: {out} ({calls})")
+    written = str(out)
+    if result.tests is not None:
+        tests = out.parent / f"test_{result.plan.target}.py"
+        tests.write_text(result.tests, encoding="utf-8", newline="\n")
+        written += f" + {tests}"
+    print(f"{result.status}: {written} ({calls})")
     return 0
 
 
