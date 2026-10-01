@@ -58,6 +58,7 @@ class OpenRouterLLM:
         reasoning_effort: str | None = "low",
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        fallbacks: Sequence[str] = (),
     ) -> None:
         if not api_key.get_secret_value():
             raise LLMError(
@@ -66,6 +67,8 @@ class OpenRouterLLM:
         self.model = model
         self.max_tokens = max_tokens
         self.reasoning_effort = reasoning_effort
+        self.fallbacks = [m for m in fallbacks if m and m != model]
+        """OpenRouter tries these, in order, when the first model is rate limited or down."""
         """Asks reasoning models to think briefly: free ones otherwise spend the whole
         token cap on hidden reasoning and return no answer. Ignored by other models."""
         self.max_retries = max_retries
@@ -88,6 +91,8 @@ class OpenRouterLLM:
             "temperature": 0.1,
             "max_tokens": self.max_tokens,
         }
+        if self.fallbacks:
+            body["models"] = [self.model, *self.fallbacks]
         if self.reasoning_effort:
             body["reasoning"] = {"effort": self.reasoning_effort, "exclude": True}
         for attempt in range(self.max_retries + 1):
@@ -127,18 +132,32 @@ class OpenRouterLLM:
 
 
 def _backoff(response: httpx.Response, attempt: int) -> float:
+    """Honour Retry-After; otherwise wait longer for rate limits than for outages.
+
+    Free tiers rate limit per minute upstream, so 1-2-4 s retries all land in the
+    same window; 5-15-45 s give the window time to pass.
+    """
     retry_after = response.headers.get("retry-after", "")
     if retry_after.replace(".", "", 1).isdigit():
         return min(float(retry_after), 60.0)
+    if response.status_code == 429:
+        return min(5.0 * 3.0**attempt, 60.0)
     return float(2**attempt)
 
 
 def _reason(response: httpx.Response) -> str:
+    """The provider's message, plus the upstream detail OpenRouter nests in metadata."""
     try:
-        message = response.json()["error"]["message"]
+        error = response.json()["error"]
+        message = str(error["message"])
     except (ValueError, KeyError, TypeError):
         return response.reason_phrase
-    return str(message)[:300]
+    metadata = error.get("metadata") or {}
+    raw = " ".join(str(metadata.get("raw", "")).split())
+    upstream = metadata.get("provider_name")
+    if raw or upstream:
+        message += f" [{upstream or 'upstream'}: {raw[:200] or 'no detail'}]"
+    return message[:400]
 
 
 def _parse(payload: Any, model: str) -> Completion:
