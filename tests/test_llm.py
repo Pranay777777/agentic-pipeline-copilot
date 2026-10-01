@@ -55,7 +55,7 @@ def test_rate_limits_are_retried_honouring_retry_after() -> None:
     sleeps: list[float] = []
     llm = client(
         httpx.Response(429, headers={"retry-after": "7"}),
-        httpx.Response(503),
+        httpx.Response(502),
         httpx.Response(200, json=OK),
         sleeps=sleeps,
     )
@@ -68,6 +68,9 @@ def test_rate_limits_without_retry_after_back_off_for_longer() -> None:
     llm = client(*[httpx.Response(429)] * 3, httpx.Response(200, json=OK), sleeps=sleeps)
     assert llm.complete([]).text == '{"a": 1}'
     assert sleeps == [5.0, 15.0, 45.0]
+    busy: list[float] = []  # "high demand" 503s wait like rate limits, not like outages
+    llm = client(*[httpx.Response(503)] * 2, httpx.Response(200, json=OK), sleeps=busy)
+    assert llm.complete([]).text == '{"a": 1}' and busy == [5.0, 15.0]
 
 
 def test_fallback_models_are_sent_and_upstream_detail_is_reported() -> None:

@@ -150,12 +150,13 @@ def _backoff(response: httpx.Response, attempt: int) -> float:
     """Honour Retry-After; otherwise wait longer for rate limits than for outages.
 
     Free tiers rate limit per minute upstream, so 1-2-4 s retries all land in the
-    same window; 5-15-45 s give the window time to pass.
+    same window; 5-15-45 s give the window time to pass. A 503 "high demand"
+    gets the same patience: quick retries only spend free-tier quota.
     """
     retry_after = response.headers.get("retry-after", "")
     if retry_after.replace(".", "", 1).isdigit():
         return min(float(retry_after), 60.0)
-    if response.status_code == 429:
+    if response.status_code in (429, 503):
         return min(5.0 * 3.0**attempt, 60.0)
     return float(2**attempt)
 
