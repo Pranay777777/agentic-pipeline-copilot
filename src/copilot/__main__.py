@@ -1,11 +1,11 @@
-"""Entry point: python -m app"""
+"""Entry point: python -m copilot"""
 
 from __future__ import annotations
 
 import logging
 
-from app.config import get_settings
-from app.logging import configure_logging
+from copilot.config import get_settings
+from copilot.logging import configure_logging
 
 
 def main() -> None:

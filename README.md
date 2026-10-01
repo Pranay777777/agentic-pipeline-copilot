@@ -1,120 +1,97 @@
-<!--
-README TEMPLATE — fill every section, delete these comments.
-Order matters: a reviewer reads top to bottom for about thirty seconds,
-so the demo and the value proposition sit above the fold.
--->
+# agentic-pipeline-copilot
 
-# PROJECT_NAME
+> An English spec in; a PySpark notebook out that has been checked against
+> the lakehouse's standards, executed in a sandbox, tested, and opened as a
+> pull request - never merged by the agent.
 
-> ONE_LINE_VALUE_PROP — what it does and who it is for, in under twenty words.
-> Example: "Config-driven lakehouse ingestion — onboard a new source with one SQL row, not a new pipeline."
-
-[![CI](https://github.com/Pranay777777/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranay777777/REPO/actions/workflows/ci.yml)
-![Coverage](https://img.shields.io/badge/coverage-XX%25-brightgreen)
-![Python](https://img.shields.io/badge/python-3.11+-blue)
+[![CI](https://github.com/Pranay777777/agentic-pipeline-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranay777777/agentic-pipeline-copilot/actions/workflows/ci.yml)
+![Status](https://img.shields.io/badge/status-in%20development-orange)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**[Live demo →](DEMO_URL)**
-
-<!-- Demo GIF or screenshot goes here, above the fold. Non-negotiable.
-     Record with ScreenToGif (Windows) or LICEcap. Keep it under 10 seconds
-     and under 5 MB. Show the thing working, not the code. -->
-
-![Demo](docs/images/demo.gif)
-
----
+> **Status:** early. The catalog ships first; the agents follow one at a
+> time. Nothing is listed as working until it is tested, and every number
+> links to the run that produced it.
 
 ## The problem
 
-Two or three sentences. What breaks without this? Who feels the pain?
-Write for someone who has never seen the domain. Resist describing the
-solution here — that comes next.
+Writing a new pipeline notebook for a metadata-driven lakehouse means
+knowing its tables, its patterns (deduplicate in Silver, SCD2 via MERGE,
+surrogate keys and unknown members in Gold) and its standards (no hardcoded
+paths, no unbounded `collect()`, idempotent writes). A general-purpose model
+knows PySpark, not *this* lakehouse - so it writes plausible code that uses
+the wrong columns and breaks the conventions, and nothing runs it before a
+human has to.
 
-## Architecture
+## The approach
 
 ```mermaid
 flowchart LR
-    A[Source] --> B[Ingest]
-    B --> C[(Store)]
-    C --> D[Serve]
+    SPEC["English spec"] --> PLAN["Planner<br/>structured plan"]
+    CAT[("Catalog<br/>tables · patterns · standards<br/>from metadata-driven-lakehouse")] --> PLAN
+    PLAN --> V1{"plan valid<br/>against catalog?"}
+    V1 --> GEN["Generator<br/>PySpark + tests<br/>cites the pattern used"]
+    CAT --> GEN
+    GEN --> CRIT["Critic<br/>standards review"]
+    CRIT --> SA{"static gate<br/>ruff · mypy · AST bans"}
+    SA --> SBX["Sandbox<br/>no network · read-only · caps · timeout"]
+    SBX --> VAL{"Validator<br/>run on sample data"}
+    VAL -- "errors (bounded retries)" --> GEN
+    VAL -- pass --> PR["Pull request<br/>least-privilege token · never merges"]
+    VAL -- "retries exhausted" --> HUMAN["Human, with a<br/>diagnostic report"]
 ```
 
-One paragraph walking through the flow, naming the non-obvious parts.
-
-## Quickstart
-
-Five commands or fewer, from nothing to running:
-
-```bash
-git clone https://github.com/Pranay777777/REPO.git && cd REPO
-cp .env.example .env
-make install
-make up
-make test
-```
-
-Then open http://localhost:8000/docs
-
-> Runs fully locally — no cloud account required.
-
-## How it works
-
-The mechanics worth explaining. Skip what any reader could guess; spend the
-space on the parts you would have to explain out loud in an interview.
-
-## Design decisions and tradeoffs
-
-<!-- The highest-value section in this file. Four to six entries.
-     Every one names what you gave up. An entry with no cost is marketing. -->
-
-**Why X over Y?**
-Needed <requirement>. Chose X because <reason>. Cost: <what it made worse>,
-mitigated by <mitigation>.
-
-**Why not Z?**
-<Honest reason. "Too slow to build" is a legitimate answer.>
+Why agents rather than one prompt - and what that costs in latency and
+tokens - is argued in [ADR-002](docs/adr/0002-multi-agent-vs-single-prompt.md).
+The short version: agents only where a deterministic check sits between
+them, everything bounded, and a single-prompt baseline measured alongside.
 
 ## Results
 
-Real numbers. A table beats adjectives.
-
 | Metric | Value | How measured |
 |---|---|---|
-| Throughput | X rows/sec | `make bench`, n=3 |
-| Latency p95 | X ms | … |
-| Cost | $X per unit | … |
+| Catalog retrieval (BM25) | **Recall@5 0.94 · MRR 0.84** (Recall@1 0.60, Recall@3 0.85) | [24 labelled questions](docs/results/catalog-retrieval.md) over 49 documents from metadata-driven-lakehouse v1.0.0 |
+| First-try notebook success | - | agent eval suite (step 78) |
+| Sandbox isolation | - | step 69 |
 
-## Limitations
+## Try the catalog
 
-What this does not do, where it breaks, what would need to change for
-production use. Being specific here reads as confidence, not weakness.
+```bash
+pip install -e ".[dev]"
+python -m copilot.catalog search "how do we keep history when a customer's city changes?"
+python -m copilot.catalog search "can a notebook call collect?" --kind standard
+python -m copilot.catalog bench
+# refresh from a lakehouse checkout:
+python -m copilot.catalog snapshot --lakehouse ../metadata-driven-lakehouse
+```
 
 ## Roadmap
 
-- [ ] Next thing
-- [ ] Thing after that
-
-## Project structure
-
-```
-src/app/          application code
-  config.py       typed settings — nothing reads os.environ directly
-  logging.py      structured JSON logging
-tests/            unit and integration tests
-docs/adr/         architecture decision records
-.github/workflows CI: lint, types, tests, security, docker
-```
+- [x] Repository, CI gates and the multi-agent decision ([ADR-002](docs/adr/0002-multi-agent-vs-single-prompt.md))
+- [x] Catalog index over the lakehouse's metadata ([ADR-003](docs/adr/0003-catalog-index.md))
+- [ ] Planner, Generator and Critic agents
+- [ ] Sandboxed executor and Validator with a bounded self-correction loop
+- [ ] Static-analysis gate and generated tests
+- [ ] Pull-request tool (least privilege, never merges) and an MCP tool layer
+- [ ] Deterministic replay, cost governor, agent eval suite and CI gate
+- [ ] Threat model (OWASP Agentic and MCP Top 10), tracing, release
 
 ## Development
 
 ```bash
-make help         # list every target
-make format lint typecheck test security
+pip install -e ".[dev]"
+ruff check . && ruff format --check . && mypy && pytest
 ```
 
-Gates: `ruff`, `mypy --strict`, `pytest` at 70% coverage minimum, `gitleaks`
-over full history, and `pip-audit`. CI runs all of them on every push.
+Decisions are recorded in [docs/adr](docs/adr). CI runs lint, strict mypy,
+tests on Python 3.11 and 3.12 (Ubuntu) and 3.12 (Windows), gitleaks over
+every ref, pip-audit and a Docker build.
+
+## Related
+
+- [metadata-driven-lakehouse](https://github.com/Pranay777777/metadata-driven-lakehouse) - the platform whose notebooks this generates (Flagship 1)
+- [evidence-grounded-resume-engine](https://github.com/Pranay777777/evidence-grounded-resume-engine) - grounded generation with a measured fabrication rate (Flagship 2)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
