@@ -2,6 +2,7 @@
 
     python -m copilot.agents run "Load orders incrementally into Silver, newest row per order"
         [--out notebooks/orders_silver.py] [--trace runs/orders.json] [--no-sandbox] [--open-pr]
+        [--record runs/orders.cassette.jsonl | --replay runs/orders.cassette.jsonl]
     python -m copilot.agents plan "..."
     python -m copilot.agents review notebooks/orders_silver.py
 
@@ -11,7 +12,9 @@
 review and the result is "reviewed", never "ready". A ready notebook is
 written with its generated tests (`test_<target>.py`); `--open-pr` also opens
 a pull request on PR_REPO with both (COPILOT_GITHUB_TOKEN - ADR-006) - it
-never merges. `review` runs the Critic's rules on any notebook and needs no key.
+never merges. `--record` writes every model call to a cassette; `--replay` answers
+from one with no model, no key and no network (ADR-007). `review` runs the
+Critic's rules on any notebook and needs no key.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from copilot.catalog.model import read_snapshot
 from copilot.config import Settings, get_settings
 from copilot.llm import LLM, LLMError, OpenRouterLLM
 from copilot.pr import GitHubPR, PRError, branch_name, files_for, from_settings, pr_body
+from copilot.replay import RecordingLLM, ReplayLLM
 from copilot.sandbox.runner import DockerSandbox, Limits, Sandbox
 
 SNAPSHOT = Path("catalog/snapshot.jsonl")
@@ -91,6 +95,9 @@ def main(
     run.add_argument(
         "--open-pr", action="store_true", help="open a pull request on PR_REPO when ready"
     )
+    tape = run.add_mutually_exclusive_group()
+    tape.add_argument("--record", type=Path, help="write every model call to this cassette")
+    tape.add_argument("--replay", type=Path, help="answer from this cassette; no model")
     plan = sub.add_parser("plan", help="plan only, checked against the catalog")
     plan.add_argument("spec")
     check = sub.add_parser("review", help="run the Critic's rules on a notebook")
@@ -126,11 +133,16 @@ def main(
             )
             return 2
         validator = Validator(sandbox, catalog)
+    replay = args.command == "run" and args.replay is not None
     try:
+        if replay:
+            llm = llm or ReplayLLM(args.replay)
         llm = llm or make_llm(settings)
     except LLMError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.command == "run" and args.record is not None:
+        llm = RecordingLLM(llm, args.record)
     pipeline = Pipeline(
         llm, catalog, settings.agent_max_attempts, settings.correction_max_rounds, validator
     )
@@ -138,7 +150,11 @@ def main(
         if args.command == "plan":
             print(pipeline.planner.plan(args.spec).model_dump_json(indent=2))
             return 0
-        note = f"running with {settings.llm_model} - free models can take minutes..."
+        note = (
+            f"replaying {args.replay} - no model, no network"
+            if replay
+            else f"running with {settings.llm_model} - free models can take minutes..."
+        )
         print(note, file=sys.stderr, flush=True)
         result = pipeline.run(args.spec, on_attempt=progress)
     except StageRejectedError as exc:
