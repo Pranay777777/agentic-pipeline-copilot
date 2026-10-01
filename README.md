@@ -148,7 +148,8 @@ Notebooks are Databricks source files (`.py`).
 - [x] Pull-request tool (least privilege, never merges)
 - [x] MCP tool layer, deterministic replay and a per-run cost governor ([ADR-007](docs/adr/0007-mcp-tools-replay-cost-governor.md))
 - [x] Agent eval suite (50 specs, recorded once, replayed in CI) and its regression gate ([ADR-008](docs/adr/0008-eval-suite-replayed-gate.md))
-- [ ] Threat model (OWASP Agentic and MCP Top 10), tracing, release
+- [x] [Threat model](docs/threat-model.md) mapped to the OWASP Agentic Top 10 and MCP Top 10
+- [ ] Demo GIF, published eval table and the v1.0.0 release
 
 ## Development
 
