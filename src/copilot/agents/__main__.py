@@ -42,8 +42,9 @@ def progress(attempt: Attempt) -> None:
 
 
 def make_llm(settings: Settings) -> LLM:
+    key = settings.llm_api_key if settings.llm_api_key.get_secret_value() else None
     return OpenRouterLLM(
-        settings.openrouter_api_key,
+        key or settings.openrouter_api_key,
         settings.llm_model,
         base_url=settings.llm_base_url,
         timeout=settings.llm_timeout_s,
@@ -51,6 +52,7 @@ def make_llm(settings: Settings) -> LLM:
         reasoning_effort=settings.llm_reasoning_effort or None,
         fallbacks=[m.strip() for m in settings.llm_fallback_models.split(",")],
         max_retries=settings.llm_max_retries,
+        provider=settings.llm_provider,
     )
 
 

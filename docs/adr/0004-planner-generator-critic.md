@@ -43,6 +43,9 @@ Critic is not a model.
   (`LLM_MAX_TOKENS`, 8000), and an empty answer is retried and explained.
   Free models are also rate limited upstream, so `LLM_FALLBACK_MODELS` lets
   OpenRouter switch models on a 429, and rate-limit retries wait 5-15-45 s.
+  `LLM_PROVIDER=openai` points the same client at any OpenAI-compatible
+  endpoint - Google AI Studio's free Gemini API is the documented second
+  option - sending only standard fields plus `reasoning_effort`.
   Tests use `ScriptedLLM`, so CI makes no model calls.
 
 ## Alternatives

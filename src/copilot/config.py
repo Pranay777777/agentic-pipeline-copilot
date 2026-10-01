@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://app:app@localhost:5432/app"
 
     # Model provider (ADR-004): OpenRouter's free models by default.
+    llm_provider: Literal["openrouter", "openai"] = "openrouter"
+    """"openai" = any OpenAI-compatible endpoint (e.g. Google AI Studio's Gemini API)."""
+    llm_api_key: SecretStr = SecretStr("")
+    """Key for a non-OpenRouter provider; falls back to OPENROUTER_API_KEY."""
     openrouter_api_key: SecretStr = SecretStr("")
     llm_model: str = "openrouter/free"
     llm_base_url: str = "https://openrouter.ai/api/v1"

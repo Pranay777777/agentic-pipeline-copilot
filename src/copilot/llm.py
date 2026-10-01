@@ -1,4 +1,9 @@
-"""A minimal client for OpenAI-compatible chat APIs - OpenRouter first.
+"""A minimal client for OpenAI-compatible chat APIs - OpenRouter first, any compatible one too.
+
+`provider="openrouter"` adds OpenRouter's extras (the `reasoning` object,
+`models` fallbacks, attribution headers); `provider="openai"` sends only the
+standard fields plus `reasoning_effort`, for endpoints such as Google AI
+Studio's OpenAI-compatible Gemini API.
 
 One endpoint, no SDK: easy to fake and explicit about retries. Free tiers
 rate limit hard, so 429 and 5xx responses are retried with backoff that
@@ -59,11 +64,14 @@ class OpenRouterLLM:
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         fallbacks: Sequence[str] = (),
+        provider: str = "openrouter",
     ) -> None:
         if not api_key.get_secret_value():
             raise LLMError(
-                "no API key - set OPENROUTER_API_KEY (a free key from openrouter.ai/keys)"
+                "no API key - set OPENROUTER_API_KEY (a free key from openrouter.ai/keys), "
+                "or LLM_API_KEY for another provider"
             )
+        self.provider = provider
         self.model = model
         self.max_tokens = max_tokens
         self.reasoning_effort = reasoning_effort
@@ -77,11 +85,15 @@ class OpenRouterLLM:
             base_url=base_url,
             timeout=timeout,
             transport=transport,
-            headers={
-                "Authorization": f"Bearer {api_key.get_secret_value()}",
-                "HTTP-Referer": "https://github.com/Pranay777777/agentic-pipeline-copilot",
-                "X-Title": "agentic-pipeline-copilot",
-            },
+            headers={"Authorization": f"Bearer {api_key.get_secret_value()}"}
+            | (
+                {
+                    "HTTP-Referer": "https://github.com/Pranay777777/agentic-pipeline-copilot",
+                    "X-Title": "agentic-pipeline-copilot",
+                }
+                if provider == "openrouter"
+                else {}
+            ),
         )
 
     def complete(self, messages: list[Message]) -> Completion:
@@ -91,10 +103,13 @@ class OpenRouterLLM:
             "temperature": 0.1,
             "max_tokens": self.max_tokens,
         }
-        if self.fallbacks:
-            body["models"] = [self.model, *self.fallbacks]
-        if self.reasoning_effort:
-            body["reasoning"] = {"effort": self.reasoning_effort, "exclude": True}
+        if self.provider == "openrouter":
+            if self.fallbacks:
+                body["models"] = [self.model, *self.fallbacks]
+            if self.reasoning_effort:
+                body["reasoning"] = {"effort": self.reasoning_effort, "exclude": True}
+        elif self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
         for attempt in range(self.max_retries + 1):
             last = attempt == self.max_retries
             try:

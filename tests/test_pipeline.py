@@ -213,5 +213,9 @@ def test_factories_use_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert llm.fallbacks == ["b:free", "c:free"]
     sandbox = make_sandbox(settings)
     assert sandbox.image == "copilot-sandbox:0.1" and sandbox.limits.timeout_s == 99
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_API_KEY", "g-key")
+    gemini = make_llm(Settings())
+    assert isinstance(gemini, OpenRouterLLM) and gemini.provider == "openai"
     with pytest.raises(LLMError):
-        make_llm(Settings(openrouter_api_key="", _env_file=None))  # type: ignore[call-arg,arg-type]
+        make_llm(Settings(openrouter_api_key="", llm_api_key="", _env_file=None))  # type: ignore[call-arg,arg-type]
