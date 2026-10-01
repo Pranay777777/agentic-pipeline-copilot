@@ -170,3 +170,26 @@ def test_reasoning_can_be_left_out() -> None:
     )
     llm.complete([])
     assert "reasoning" not in json.loads(seen[0].content)
+
+
+def test_openai_compatible_providers_get_only_standard_fields() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=OK)
+
+    llm = OpenRouterLLM(
+        SecretStr("g-key"),
+        "gemini-2.5-flash",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        transport=httpx.MockTransport(handler),
+        fallbacks=["other"],
+        provider="openai",
+    )
+    llm.complete([])
+    body = json.loads(seen[0].content)
+    assert body["reasoning_effort"] == "low"
+    assert "reasoning" not in body and "models" not in body
+    assert "x-title" not in seen[0].headers and seen[0].headers["authorization"] == "Bearer g-key"
+    assert str(seen[0].url).endswith("/v1beta/openai/chat/completions")

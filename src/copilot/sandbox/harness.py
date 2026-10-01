@@ -29,6 +29,9 @@ JOB = Path("/job")
 OUT = Path("/out")
 SEPARATOR = "# COMMAND ----------"
 TITLE = "# DBTITLE 1,"
+PUBLIC_ENV = frozenset({"GPG_KEY"})
+"""Set by the official python base image: the public fingerprint of the key that signs
+Python releases. Named like a secret, but published - any other match fails the check."""
 SPARK_TYPES = {
     "string": "STRING",
     "int64": "BIGINT",
@@ -149,7 +152,9 @@ def probe() -> dict[str, Any]:  # pragma: no cover - container only
         "write_tmp": attempt(lambda: Path("/tmp/probe").write_text("x")),  # noqa: S108
         "uid": getattr(os, "getuid", lambda: -1)(),  # Linux in the container; typed on Windows
         "env_secrets": sorted(
-            k for k in os.environ if any(w in k.upper() for w in ("KEY", "TOKEN", "SECRET"))
+            k
+            for k in os.environ
+            if any(w in k.upper() for w in ("KEY", "TOKEN", "SECRET")) and k not in PUBLIC_ENV
         ),
     }
 
