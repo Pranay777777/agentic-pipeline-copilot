@@ -49,7 +49,10 @@ def test_names_the_lakehouse_does_not_have_are_rejected(
     assert any("source 'payments' is not a catalog table" in e for e in errors)
     assert any("key 'order_uuid' is not a column" in e for e in errors)
     assert any("incremental_column 'modified_at'" in e for e in errors)
-    assert any("step 1 reads 'invoices'" in e for e in errors)
+    assert (
+        "step 1: table 'invoices' is neither a source (orders, payments) nor the target"
+        in " ".join(errors)
+    )
     assert "step 2: column 'ts' is not in orders" in errors
     assert "step 3: 'pattern:module.magic' is not a catalog pattern" in errors
     assert "'standard:notebook.be-nice' is not a catalog standard" in errors
@@ -93,3 +96,14 @@ def test_extract_json_finds_the_object() -> None:
     assert extract_json('noise {"a": {"b": 1}} trailing') == {"a": {"b": 1}}
     with pytest.raises(ValueError, match="no JSON object"):
         extract_json("nothing here")
+
+
+def test_a_step_may_write_the_target_using_source_columns(
+    catalog: Catalog, make_plan: MakePlan
+) -> None:
+    raw = make_plan()
+    raw["steps"][2] |= {"table": "orders_silver", "columns": ["order_id", "updated_at"]}
+    assert check_plan(Plan.model_validate(raw), catalog) == []
+    raw["steps"][2]["columns"] = ["order_id", "invented"]
+    errors = check_plan(Plan.model_validate(raw), catalog)
+    assert errors == ["step 3: column 'invented' is not in orders_silver"]
