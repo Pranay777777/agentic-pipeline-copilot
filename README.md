@@ -9,8 +9,8 @@
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Status:** early. The catalog ships first; the agents follow one at a
-> time. Nothing is listed as working until it is tested, and every number
+> **Status:** early. The catalog and the first three agents (plan, generate,
+> review) work; the sandbox, validator and pull-request tool come next. Nothing is listed as working until it is tested, and every number
 > links to the run that produced it.
 
 ## The problem
@@ -65,11 +65,26 @@ python -m copilot.catalog bench
 python -m copilot.catalog snapshot --lakehouse ../metadata-driven-lakehouse
 ```
 
+## Try the agents
+
+```bash
+# OPENROUTER_API_KEY in .env (a free key from openrouter.ai/keys)
+python -m copilot.agents run "Load orders incrementally into Silver, one row per order_id, newest wins" \
+    --trace runs/orders.json
+python -m copilot.agents review notebooks/orders_silver.py   # the Critic's rules; no key needed
+```
+
+The Planner's plan is checked against the catalog, the Generator's cells
+must cite the catalog patterns they follow, and the Critic's rules enforce
+the standards line by line - everything bounded, and a rejected run says
+which stage failed and why ([ADR-004](docs/adr/0004-planner-generator-critic.md)).
+Notebooks are Databricks source files (`.py`).
+
 ## Roadmap
 
 - [x] Repository, CI gates and the multi-agent decision ([ADR-002](docs/adr/0002-multi-agent-vs-single-prompt.md))
 - [x] Catalog index over the lakehouse's metadata ([ADR-003](docs/adr/0003-catalog-index.md))
-- [ ] Planner, Generator and Critic agents
+- [x] Planner, Generator and Critic agents ([ADR-004](docs/adr/0004-planner-generator-critic.md))
 - [ ] Sandboxed executor and Validator with a bounded self-correction loop
 - [ ] Static-analysis gate and generated tests
 - [ ] Pull-request tool (least privilege, never merges) and an MCP tool layer
