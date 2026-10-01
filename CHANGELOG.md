@@ -25,6 +25,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cost governor: every run is capped at `RUN_MAX_CALLS` model calls and `RUN_MAX_TOKENS` tokens and stops hard (`rejected` at stage `budget`).
 - Planner check: the target may not overwrite a catalog table.
 - Agent eval suite: 50 specs with expected plans, recorded in batches and replayed; `python -m copilot.evals gate` runs in CI and fails on regressions or a pass rate under 80%; `render` writes the README images (ADR-008).
+- Threat model (`docs/threat-model.md`) mapped to the OWASP Top 10 for Agentic Applications 2026 and the OWASP MCP Top 10, each control pointing at the code or test that enforces it.
+- Demo GIF renderer (`python -m copilot.demo`) that draws a replayed CLI transcript as an animated terminal; `run` prints a one-line evidence summary (review, static gate, sandbox, tests).
 - Cassettes record each call's wall-clock seconds and are created only when the first answer arrives; 503 "high demand" responses back off like rate limits.
 
 ### Fixed

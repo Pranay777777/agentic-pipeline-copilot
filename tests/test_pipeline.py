@@ -140,6 +140,8 @@ def test_cli_run_writes_a_ready_notebook_and_its_trace(
         "ready:" in captured.out and "(2 model call(s), 30 tokens, 0 correction(s))" in captured.out
     )
     assert "plan #1: ok - scripted, 15 tokens" in captured.err
+    assert "review: passed · static: clean · sandbox: " in captured.err
+    assert "tests: 4/4 passed" in captured.err
     assert out.read_text(encoding="utf-8").startswith("# Databricks notebook source")
     tests = out.parent / "test_orders_silver.py"
     assert f"{out} + {tests}" in captured.out
