@@ -43,6 +43,7 @@ def test_a_notebook_that_runs_and_meets_expectations_is_ready(
     assert result.rounds[0].validation is not None and result.rounds[0].validation.passed
     assert "# COMMAND ----------" in sandbox.notebooks[0]
     assert result.tokens == 30
+    assert result.tests is not None and "def test_one_row_per_key" in result.tests
 
 
 def test_without_a_sandbox_the_best_a_run_can_be_is_reviewed(
@@ -82,12 +83,15 @@ def test_two_failed_corrections_escalate_with_the_whole_trajectory(
     llm = script(make_plan(), make_draft(), make_draft(), make_draft())
     result = Pipeline(llm, catalog, validator=Validator(sandbox, catalog)).run(SPEC)
     assert (result.status, result.stage, result.corrections) == ("escalated", "validate", 2)
-    assert result.reasons == ["expectation: one_row_per_key: 12 order_id value(s) twice"]
+    assert result.reasons == [
+        "expectation: test_one_row_per_key: "
+        "AssertionError: 12 order_id value(s) appear more than once"
+    ]
     report = diagnostic_report(result)
     assert report.startswith("# Copilot run: escalated")
     assert "after 2 correction round(s), 4 model call(s)" in report
     assert "### Round 1" in report and "execution: cell 2 'Read new Bronze rows'" in report
-    assert "check one_row_per_key: failed" in report and "## Last notebook" in report
+    assert "check test_one_row_per_key: failed" in report and "## Last notebook" in report
     summary = result.summary()
     assert summary["corrections"] == 2 and len(summary["rounds"]) == 3  # type: ignore[arg-type]
 
@@ -137,6 +141,9 @@ def test_cli_run_writes_a_ready_notebook_and_its_trace(
     )
     assert "plan #1: ok - scripted, 15 tokens" in captured.err
     assert out.read_text(encoding="utf-8").startswith("# Databricks notebook source")
+    tests = out.parent / "test_orders_silver.py"
+    assert f"{out} + {tests}" in captured.out
+    assert "def test_keys_are_not_null" in tests.read_text(encoding="utf-8")
     assert json.loads(trace.read_text(encoding="utf-8"))["status"] == "ready"
     assert main(["review", str(out)]) == 0
 

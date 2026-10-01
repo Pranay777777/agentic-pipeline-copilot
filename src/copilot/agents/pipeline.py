@@ -26,6 +26,7 @@ from copilot.agents.base import Attempt, Catalog, Exchange, StageRejectedError
 from copilot.agents.critic import Review, review
 from copilot.agents.generator import Generator, NotebookDraft, render
 from copilot.agents.planner import Plan, Planner
+from copilot.agents.testgen import generate_tests
 from copilot.agents.validator import ValidationReport, Validator
 from copilot.catalog.index import CatalogIndex
 from copilot.llm import LLM
@@ -60,6 +61,8 @@ class Run:
     plan: Plan | None = None
     draft: NotebookDraft | None = None
     notebook: str | None = None
+    tests: str | None = None
+    """The pytest file derived from the plan and the catalog (step 73); ships with the notebook."""
     rounds: list[Round] = field(default_factory=list)
     attempts: list[Attempt] = field(default_factory=list)
 
@@ -113,6 +116,7 @@ class Pipeline:
         validator: Validator | None = None,
     ) -> None:
         index = CatalogIndex(list(catalog.docs.values()))
+        self.catalog = catalog
         self.planner = Planner(llm, catalog, index, max_attempts)
         self.generator = Generator(llm, catalog, max_attempts)
         self.validator = validator
@@ -123,6 +127,7 @@ class Pipeline:
         exchange = Exchange("run", result.attempts, on_attempt)
         try:
             result.plan = self.planner.plan(spec, exchange)
+            result.tests = generate_tests(result.plan, self.catalog)
             result.draft = self.generator.generate(result.plan, exchange)
             for number in range(self.max_corrections + 1):
                 current = self._round(number, result.plan, result.draft, result)

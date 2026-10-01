@@ -46,7 +46,13 @@ def test_a_delta_merge_notebook_runs_and_meets_the_plan(
     assert report.passed, (report.errors, report.log_tail)
     assert len(report.ran) == 4
     checks = {c["name"]: c for c in report.checks}
-    assert checks["one_row_per_key"]["passed"] and checks["target_not_empty"]["detail"] == "12 rows"
+    assert set(checks) == {
+        "test_target_is_not_empty",
+        "test_keys_are_present",
+        "test_keys_are_not_null",
+        "test_one_row_per_key",
+    }
+    assert all(c["passed"] for c in checks.values())
 
 
 def test_a_wrong_column_comes_back_with_its_notebook_line(

@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import traceback
+import types
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -291,33 +292,68 @@ def load_tables(spark: Any, job: dict[str, Any]) -> None:  # pragma: no cover - 
     )
 
 
-def check(spark: Any, job: dict[str, Any]) -> list[dict[str, Any]]:  # pragma: no cover
-    target, keys = job["target"], job["keys"]
-    frame = spark.table(target)
-    if "is_current" in frame.columns:
-        frame = frame.where("is_current")
-    rows = frame.count()
-    checks = [{"name": "target_not_empty", "passed": rows > 0, "detail": f"{rows} rows"}]
-    missing = [k for k in keys if k not in frame.columns]
-    if missing:
-        checks.append(
-            {"name": "keys_present", "passed": False, "detail": f"missing {', '.join(missing)}"}
+def run_tests(path: Path, fixtures: dict[str, Any]) -> list[dict[str, Any]]:
+    """Run the generated pytest file in this process, against the live session.
+
+    Each test becomes {name, passed, detail}; a skipped test (a contract column
+    the target does not carry) counts as passed, a warning is kept in the
+    detail. pytest is imported by name: it is in the image, not a harness import.
+    """
+    pytest = importlib.import_module("pytest")
+    outcomes: dict[str, dict[str, Any]] = {}
+    warned: dict[str, str] = {}
+
+    def name(nodeid: str) -> str:
+        return nodeid.rsplit("::", 1)[-1]
+
+    def spark() -> Any:
+        return fixtures["spark"]
+
+    def target_table() -> str:
+        return str(fixtures["target_table"])
+
+    def warning_recorded(warning_message: Any, nodeid: str) -> None:
+        if nodeid:
+            warned[name(nodeid)] = str(warning_message.message)
+
+    def runtest_logreport(report: Any) -> None:
+        test = name(report.nodeid)
+        if report.when != "call" and not (report.failed or report.skipped):
+            return
+        if report.failed:
+            crash = getattr(getattr(report.longrepr, "reprcrash", None), "message", "")
+            lines = (crash or report.longreprtext or "failed").strip().splitlines()
+            detail = lines[0] if crash else lines[-1]
+        elif report.skipped:
+            reason = report.longrepr[-1] if isinstance(report.longrepr, tuple) else ""
+            detail = f"skipped: {str(reason).removeprefix('Skipped: ')}"
+        else:
+            detail = "passed"
+        outcomes.setdefault(
+            test, {"name": test, "passed": not report.failed, "detail": detail[:600]}
         )
-        return checks
-    if job.get("unique_keys"):
-        dupes = frame.groupBy(*keys).count().where("count > 1").count()
-        checks.append(
-            {
-                "name": "one_row_per_key",
-                "passed": dupes == 0,
-                "detail": f"{dupes} {'/'.join(keys)} value(s) appear more than once",
-            }
-        )
-    nulls = frame.where(" OR ".join(f"`{k}` IS NULL" for k in keys)).count()
-    checks.append(
-        {"name": "keys_not_null", "passed": nulls == 0, "detail": f"{nulls} row(s) with a null key"}
-    )
-    return checks
+
+    # A module, like a conftest - a class would bind the fixtures as methods. Fixtures
+    # are assigned, not decorated: pytest is imported by name, so untyped here.
+    plugin = types.ModuleType("copilot_sandbox_fixtures")
+    hooks = {
+        "spark": pytest.fixture(spark, name="spark"),
+        "target_table": pytest.fixture(target_table, name="target_table"),
+        "pytest_warning_recorded": warning_recorded,
+        "pytest_runtest_logreport": runtest_logreport,
+    }
+    for attribute, value in hooks.items():
+        setattr(plugin, attribute, value)
+
+    sys.modules.pop(path.stem, None)  # a fresh import each run, never a cached module
+    args = ["-q", "-p", "no:cacheprovider", "--capture=sys", str(path)]
+    code = int(pytest.main(args, plugins=[plugin]))
+    if code not in (0, 1) or not outcomes:
+        raise RuntimeError(f"pytest exited with code {code} running {path.name}")
+    for test, message in warned.items():
+        if test in outcomes and outcomes[test]["passed"]:
+            outcomes[test]["detail"] = f"warning: {message}"[:600]
+    return list(outcomes.values())
 
 
 def main() -> None:  # pragma: no cover - container only
@@ -344,7 +380,8 @@ def main() -> None:  # pragma: no cover - container only
             result.update(run_cells(split_cells(source), namespace))
             if result["error"] is None:
                 try:
-                    result["checks"] = check(spark, job)
+                    fixtures = {"spark": spark, "target_table": job["target"]}
+                    result["checks"] = run_tests(JOB / "test_notebook.py", fixtures)
                 except Exception as exc:
                     message = " ".join(str(exc).split())[:600]
                     result["error"] = {

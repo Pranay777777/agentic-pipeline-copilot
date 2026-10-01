@@ -158,9 +158,10 @@ PASSED = {
     "ran": ["Parameters", "Read new Bronze rows", "Newest row per order", "MERGE into Silver"],
     "error": None,
     "checks": [
-        {"name": "target_not_empty", "passed": True, "detail": "12 rows"},
-        {"name": "one_row_per_key", "passed": True, "detail": "0 order_id value(s) ..."},
-        {"name": "keys_not_null", "passed": True, "detail": "0 row(s) with a null key"},
+        {"name": "test_target_is_not_empty", "passed": True, "detail": "passed"},
+        {"name": "test_keys_are_present", "passed": True, "detail": "passed"},
+        {"name": "test_keys_are_not_null", "passed": True, "detail": "passed"},
+        {"name": "test_one_row_per_key", "passed": True, "detail": "passed"},
     ],
     "seconds": 21.5,
 }
@@ -181,8 +182,12 @@ DUPLICATES = {
     "ran": ["Parameters", "Read new Bronze rows", "Newest row per order", "MERGE into Silver"],
     "error": None,
     "checks": [
-        {"name": "target_not_empty", "passed": True, "detail": "24 rows"},
-        {"name": "one_row_per_key", "passed": False, "detail": "12 order_id value(s) twice"},
+        {"name": "test_target_is_not_empty", "passed": True, "detail": "passed"},
+        {
+            "name": "test_one_row_per_key",
+            "passed": False,
+            "detail": "AssertionError: 12 order_id value(s) appear more than once",
+        },
     ],
     "seconds": 20.0,
 }

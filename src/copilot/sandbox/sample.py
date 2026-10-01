@@ -9,16 +9,31 @@ non-key columns are sometimes null.
 
 from __future__ import annotations
 
+import ast
 import re
 from typing import Any
 
-_COLUMN = re.compile(r"^- ([a-z_][a-z0-9_]*) \(([a-z0-9]+)\)\s*$", re.MULTILINE)
+# "- customer_id (string)" optionally followed by " - description. Expect: {...}."
+_COLUMN = re.compile(r"^- ([a-z_][a-z0-9_]*) \(([a-z0-9]+)\)(?: - (.*))?$", re.MULTILINE)
+_EXPECT = re.compile(r"Expect: (\{.*\})")
 EPOCH = 1_767_225_600  # 2026-01-01T00:00:00Z
 
 
 def columns(table_text: str) -> list[tuple[str, str]]:
     """(name, type) pairs from a catalog table document."""
-    return _COLUMN.findall(table_text)
+    return [(name, kind) for name, kind, _ in _COLUMN.findall(table_text)]
+
+
+def contract(table_text: str) -> dict[str, dict[str, Any]]:
+    """Each column's data-contract expectations, e.g. {"customer_id": {"unique": True, ...}}."""
+    found: dict[str, dict[str, Any]] = {}
+    for name, _, description in _COLUMN.findall(table_text):
+        match = _EXPECT.search(description or "")
+        if match:
+            value = ast.literal_eval(match.group(1))
+            if isinstance(value, dict):
+                found[name] = value
+    return found
 
 
 def rows(cols: list[tuple[str, str]], keys: list[str], n: int = 24) -> list[dict[str, Any]]:
