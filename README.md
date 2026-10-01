@@ -75,11 +75,20 @@ python -m copilot.sandbox check     # proves: no network, read-only, non-root, n
 python -m copilot.agents run "Load orders incrementally into Silver, one row per order_id, newest wins" \
     --trace runs/orders.json
 python -m copilot.agents review notebooks/orders_silver.py   # the Critic's rules; no key needed
+
+# pull requests: PR_REPO and COPILOT_GITHUB_TOKEN in .env (fine-grained, that repo only)
+python -m copilot.pr check
+python -m copilot.agents run "..." --open-pr
 ```
 
-Every notebook runs on sample data in the sandbox before it is called ready;
-review findings and execution errors go back to the Generator for at most two
-correction rounds, then the run escalates with a diagnostic report
+Every notebook passes a static gate (ruff, mypy) and runs on sample data in the
+sandbox, with pytest tests derived from the plan and the catalog's data
+contracts, before it is called ready. `--open-pr` then opens a pull request
+with the notebook and its tests on one playground repository, through a
+fine-grained token - it never merges
+([ADR-006](docs/adr/0006-static-gate-generated-tests-pull-requests.md)).
+Failures at any gate go back to the Generator for at most two correction
+rounds, then the run escalates with a diagnostic report
 ([ADR-005](docs/adr/0005-sandbox-validator-correction.md)).
 
 The Planner's plan is checked against the catalog, the Generator's cells
@@ -94,8 +103,9 @@ Notebooks are Databricks source files (`.py`).
 - [x] Catalog index over the lakehouse's metadata ([ADR-003](docs/adr/0003-catalog-index.md))
 - [x] Planner, Generator and Critic agents ([ADR-004](docs/adr/0004-planner-generator-critic.md))
 - [x] Sandboxed executor and Validator with a bounded self-correction loop ([ADR-005](docs/adr/0005-sandbox-validator-correction.md))
-- [ ] Static-analysis gate and generated tests
-- [ ] Pull-request tool (least privilege, never merges) and an MCP tool layer
+- [x] Static-analysis gate and generated tests ([ADR-006](docs/adr/0006-static-gate-generated-tests-pull-requests.md))
+- [x] Pull-request tool (least privilege, never merges)
+- [ ] MCP tool layer
 - [ ] Deterministic replay, cost governor, agent eval suite and CI gate
 - [ ] Threat model (OWASP Agentic and MCP Top 10), tracing, release
 

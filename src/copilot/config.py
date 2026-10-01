@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     sandbox_memory: str = "2g"
     sandbox_cpus: float = 2.0
 
+    # Pull requests (ADR-006): one repository, a fine-grained token, never a merge.
+    pr_repo: str = ""
+    """owner/name of the only repository the copilot may open pull requests on."""
+    copilot_github_token: SecretStr = SecretStr("")
+    """Fine-grained token for PR_REPO only: Contents and Pull requests read/write."""
+    pr_base_branch: str = "main"
+
 
 @lru_cache
 def get_settings() -> Settings:
