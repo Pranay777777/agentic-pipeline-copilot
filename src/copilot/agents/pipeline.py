@@ -10,7 +10,8 @@ A run ends in one of four states:
 - **escalated** - the notebook was produced, but review findings or
   execution errors were still there after the last correction round; a
   human gets a diagnostic report with the whole trajectory;
-- **rejected** - a stage could not produce an artefact its check accepts.
+- **rejected** - a stage could not produce an artefact its check accepts, or
+  the run hit its budget of tokens or model calls (stage `budget`, ADR-007).
 
 Every model answer, review and execution is kept, so the correction
 trajectory is part of the record (step 71), not something reconstructed.
@@ -29,6 +30,7 @@ from copilot.agents.planner import Plan, Planner
 from copilot.agents.testgen import generate_tests
 from copilot.agents.validator import ValidationReport, Validator
 from copilot.catalog.index import CatalogIndex
+from copilot.governor import Budget, BudgetExceededError, GovernedLLM
 from copilot.llm import LLM
 
 Status = Literal["ready", "reviewed", "escalated", "rejected"]
@@ -56,7 +58,7 @@ class Run:
     spec: str
     status: Status = "rejected"
     stage: str | None = None
-    """The stage that stopped the run: plan, generate, review or validate."""
+    """The stage that stopped the run: plan, generate, review, validate or budget."""
     reasons: list[str] = field(default_factory=list)
     plan: Plan | None = None
     draft: NotebookDraft | None = None
@@ -65,6 +67,8 @@ class Run:
     """The pytest file derived from the plan and the catalog (step 73); ships with the notebook."""
     rounds: list[Round] = field(default_factory=list)
     attempts: list[Attempt] = field(default_factory=list)
+    usage: dict[str, int] = field(default_factory=dict)
+    """Calls and tokens against the run's budget (step 77)."""
 
     @property
     def tokens(self) -> int:
@@ -83,6 +87,7 @@ class Run:
             "model_calls": len(self.attempts),
             "tokens": self.tokens,
             "corrections": self.corrections,
+            "budget": self.usage,
             "plan": self.plan.model_dump(mode="json") if self.plan else None,
             "attempts": [
                 {"stage": a.stage, "number": a.number, "model": a.model, "errors": list(a.errors)}
@@ -114,7 +119,10 @@ class Pipeline:
         max_attempts: int = 2,
         max_corrections: int = 2,
         validator: Validator | None = None,
+        budget: Budget | None = None,
     ) -> None:
+        self.governor = GovernedLLM(llm, budget or Budget())
+        llm = self.governor
         index = CatalogIndex(list(catalog.docs.values()))
         self.catalog = catalog
         self.planner = Planner(llm, catalog, index, max_attempts)
@@ -125,6 +133,16 @@ class Pipeline:
     def run(self, spec: str, on_attempt: Callable[[Attempt], None] | None = None) -> Run:
         result = Run(spec)
         exchange = Exchange("run", result.attempts, on_attempt)
+        self.governor.reset()
+        try:
+            self._run(result, exchange)
+        except BudgetExceededError as exc:
+            result.status, result.stage, result.reasons = "rejected", "budget", [str(exc)]
+        result.usage = self.governor.usage()
+        return result
+
+    def _run(self, result: Run, exchange: Exchange) -> None:
+        spec = result.spec
         try:
             result.plan = self.planner.plan(spec, exchange)
             result.tests = generate_tests(result.plan, self.catalog)
@@ -133,18 +151,17 @@ class Pipeline:
                 current = self._round(number, result.plan, result.draft, result)
                 if not current.feedback:
                     result.status = "ready" if self.validator else "reviewed"
-                    return result
+                    return
                 if number == self.max_corrections:
                     result.status = "escalated"
                     result.stage = "review" if not current.review.passed else "validate"
                     result.reasons = current.feedback
-                    return result
+                    return
                 result.draft = self.generator.generate(
                     result.plan, exchange, review=current.feedback, previous=result.draft
                 )
         except StageRejectedError as exc:
             result.stage, result.reasons = exc.stage, exc.errors
-        return result
 
     def _round(self, number: int, plan: Plan, draft: NotebookDraft, result: Run) -> Round:
         result.notebook = render(draft, plan)
@@ -165,6 +182,15 @@ def diagnostic_report(run: Run) -> str:
         f"**Stopped at:** {run.stage or '-'} after {run.corrections} correction round(s), "
         f"{len(run.attempts)} model call(s), {run.tokens} tokens.",
         "",
+        *(
+            [
+                f"**Budget:** {run.usage['calls']} of {run.usage['max_calls']} calls, "
+                f"{run.usage['tokens']} of {run.usage['max_tokens']} tokens.",
+                "",
+            ]
+            if run.usage
+            else []
+        ),
         "## Why",
         "",
         *[f"- {r}" for r in run.reasons],

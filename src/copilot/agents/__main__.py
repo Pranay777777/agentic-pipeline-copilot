@@ -30,6 +30,7 @@ from copilot.agents.pipeline import Pipeline, diagnostic_report
 from copilot.agents.validator import Validator
 from copilot.catalog.model import read_snapshot
 from copilot.config import Settings, get_settings
+from copilot.governor import Budget
 from copilot.llm import LLM, LLMError, OpenRouterLLM
 from copilot.pr import GitHubPR, PRError, branch_name, files_for, from_settings, pr_body
 from copilot.replay import RecordingLLM, ReplayLLM
@@ -143,8 +144,9 @@ def main(
         return 2
     if args.command == "run" and args.record is not None:
         llm = RecordingLLM(llm, args.record)
+    budget = Budget(settings.run_max_tokens, settings.run_max_calls)
     pipeline = Pipeline(
-        llm, catalog, settings.agent_max_attempts, settings.correction_max_rounds, validator
+        llm, catalog, settings.agent_max_attempts, settings.correction_max_rounds, validator, budget
     )
     try:
         if args.command == "plan":
