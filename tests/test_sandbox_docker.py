@@ -74,7 +74,8 @@ def test_a_notebook_that_does_not_finish_is_killed(
     catalog: Catalog, make_plan: Make, make_draft: Make
 ) -> None:
     draft = make_draft()
-    draft["cells"][0]["code"] = "import time\n\ntime.sleep(600)"
+    # Sleeps before the cell's own code, so the notebook still passes the static gate.
+    draft["cells"][0]["code"] = "import time\n\ntime.sleep(600)\n\n" + draft["cells"][0]["code"]
     plan, text = notebook(make_plan, draft)
     report = Validator(DockerSandbox(IMAGE, Limits(timeout_s=20)), catalog).validate(plan, text)
     assert report.timed_out and str(report.errors[0]).startswith("sandbox: Timeout")
