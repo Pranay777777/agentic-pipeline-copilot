@@ -10,6 +10,7 @@ is retried silently and nothing is delivered half-checked.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -64,9 +65,9 @@ class Pipeline:
         self.generator = Generator(llm, catalog, max_attempts)
         self.critic_rounds = critic_rounds
 
-    def run(self, spec: str) -> Run:
+    def run(self, spec: str, on_attempt: Callable[[Attempt], None] | None = None) -> Run:
         result = Run(spec)
-        exchange = Exchange("run", result.attempts)
+        exchange = Exchange("run", result.attempts, on_attempt)
         try:
             result.plan = self.planner.plan(spec, exchange)
             result.draft = self.generator.generate(result.plan, exchange)

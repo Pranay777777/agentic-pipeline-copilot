@@ -26,9 +26,12 @@ class Settings(BaseSettings):
     openrouter_api_key: SecretStr = SecretStr("")
     llm_model: str = "openrouter/free"
     llm_base_url: str = "https://openrouter.ai/api/v1"
-    llm_timeout_s: float = 60.0
-    llm_max_tokens: int = 3000
-    """Caps every completion, so one request can never cost more than this."""
+    llm_timeout_s: float = 180.0
+    llm_max_tokens: int = 8000
+    """Caps every completion, so one request can never cost more than this. Room for
+    a reasoning model's hidden thinking plus the JSON answer."""
+    llm_reasoning_effort: Literal["low", "medium", "high", ""] = "low"
+    """How long reasoning models may think; empty sends nothing."""
 
     # Agents (ADR-002: everything bounded).
     agent_max_attempts: int = 2

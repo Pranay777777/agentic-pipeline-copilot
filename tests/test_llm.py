@@ -46,7 +46,9 @@ def test_a_completion_carries_text_model_and_usage() -> None:
     )
     request = llm.seen[0]  # type: ignore[attr-defined]
     assert request.headers["authorization"] == "Bearer sk-test"
-    assert json.loads(request.content)["max_tokens"] == 3000
+    body = json.loads(request.content)
+    assert body["max_tokens"] == 8000
+    assert body["reasoning"] == {"effort": "low", "exclude": True}
 
 
 def test_rate_limits_are_retried_honouring_retry_after() -> None:
@@ -123,3 +125,17 @@ def test_empty_messages_are_retried_then_explained() -> None:
     message = str(caught.value)
     assert "finish_reason=length, it returned reasoning only" in message
     assert "raise LLM_MAX_TOKENS" in message
+
+
+def test_reasoning_can_be_left_out() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=OK)
+
+    llm = OpenRouterLLM(
+        SecretStr("k"), "m", transport=httpx.MockTransport(handler), reasoning_effort=None
+    )
+    llm.complete([])
+    assert "reasoning" not in json.loads(seen[0].content)
