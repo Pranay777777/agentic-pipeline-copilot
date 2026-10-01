@@ -3,7 +3,7 @@
 The container gets:
 
 - **no network** (`--network none`) - generated code cannot exfiltrate data
-  or fetch anything;
+  or fetch anything; the hostname is `localhost` so Spark can resolve itself;
 - a **read-only root filesystem** and a read-only job mount; the only
   writable places are a size-capped `/tmp` and the `/out` directory for the
   result;
@@ -83,6 +83,14 @@ def docker_command(
         f"/tmp:rw,size={limits.tmp_size}",  # noqa: S108 - inside the container
         "--env",
         "HOME=/tmp",
+        # With no network the container's random hostname resolves to nothing, and
+        # Spark's JVM exits looking itself up; localhost always resolves (/etc/hosts).
+        "--hostname",
+        "localhost",
+        "--env",
+        "SPARK_LOCAL_IP=127.0.0.1",
+        "--env",
+        "SPARK_LOCAL_HOSTNAME=localhost",
         "--volume",
         f"{job.resolve()}:/job:ro",
         "--volume",
