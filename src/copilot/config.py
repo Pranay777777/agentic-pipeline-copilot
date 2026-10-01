@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     errors, before the run is escalated to a human with a diagnostic report."""
 
     # Sandbox (ADR-005).
-    sandbox_image: str = "copilot-sandbox:0.1"
+    sandbox_image: str = "copilot-sandbox:0.2"
     sandbox_timeout_s: float = 240.0
     sandbox_memory: str = "2g"
     sandbox_cpus: float = 2.0

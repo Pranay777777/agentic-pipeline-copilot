@@ -96,8 +96,8 @@ jobs:
           pip-audit --strict --progress-spinner off
 
   sandbox:
-    # The real sandbox (ADR-005): build the pinned image, prove the isolation,
-    # then run notebooks in it - a Delta MERGE, a broken one, a runaway one.
+    # The real sandbox (ADR-005, ADR-006): build the pinned image, prove the isolation,
+    # then run notebooks in it - a Delta MERGE, a broken one, a runaway one, a static failure.
     name: Sandbox (Docker)
     runs-on: ubuntu-latest
     steps:
@@ -111,7 +111,7 @@ jobs:
       - run: python -m copilot.sandbox check
       - run: pytest -m docker --no-cov -v
         env:
-          COPILOT_SANDBOX_IMAGE: copilot-sandbox:0.1
+          COPILOT_SANDBOX_IMAGE: copilot-sandbox:0.2
 
   docker:
     name: Docker build

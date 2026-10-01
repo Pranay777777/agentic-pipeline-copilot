@@ -4,14 +4,17 @@ Copied into each job directory and started as `python /job/harness.py` in a
 container with no network, a read-only root filesystem and hard limits. It
 must not import copilot: the container has only PySpark and Delta.
 
-It reads /job/job.json, loads the sample tables, runs the notebook's cells in
-order in one namespace (with `spark` and a `dbutils` stand-in), checks the
-target table against the plan's expectations, and writes /out/result.json.
+It reads /job/job.json, runs the static-analysis gate (ruff and mypy) on the
+notebook, and only if that is clean loads the sample tables, runs the
+notebook's cells in order in one namespace (with `spark` and a `dbutils`
+stand-in), runs the generated pytest file against the target table, and
+writes /out/result.json (ADR-006).
 Executing code with `exec` is acceptable here precisely because this process
 is the isolation boundary's inside; the host never executes generated code.
 
-Pure helpers (cell splitting, cell execution, dbutils) are unit-tested on the
-host; the Spark parts run only in the container.
+Pure helpers (cell splitting, cell execution, dbutils, the static gate and the
+in-process pytest run) are unit-tested on the host; the Spark parts run only
+in the container.
 """
 
 from __future__ import annotations
@@ -19,11 +22,14 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 import socket
+import subprocess
+import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 JOB = Path("/job")
 OUT = Path("/out")
@@ -32,6 +38,38 @@ TITLE = "# DBTITLE 1,"
 PUBLIC_ENV = frozenset({"GPG_KEY"})
 """Set by the official python base image: the public fingerprint of the key that signs
 Python releases. Named like a secret, but published - any other match fails the check."""
+STATIC = Path("/tmp/static")  # noqa: S108 - the container's only writable scratch space
+BUILTINS = ("spark", "dbutils", "display")
+PRELUDE = (
+    "from typing import Any\n"
+    "from pyspark.sql import SparkSession\n"
+    "spark: SparkSession\n"
+    "dbutils: Any\n"
+    "def display(*args: Any, **kwargs: Any) -> None: ...\n"
+)
+"""Declares what Databricks injects, so mypy checks the notebook as Databricks runs it."""
+RUFF = (
+    "check",
+    "--no-cache",
+    "--isolated",
+    "--select",
+    "F,E9,B,S",
+    "--ignore",
+    "S101,S608",
+    "--config",
+    f"builtins={list(BUILTINS)!r}",
+    "--output-format",
+    "json",
+)
+MYPY = (
+    "--no-incremental",
+    f"--cache-dir={os.devnull}",  # /dev/null in the container, nul on a Windows host
+    "--ignore-missing-imports",
+    "--check-untyped-defs",
+    "--no-error-summary",
+    "--show-error-codes",
+)
+MYPY_LINE = re.compile(r"^.+?:(\d+): error: (.*?)  \[([a-z-]+)\]$")
 SPARK_TYPES = {
     "string": "STRING",
     "int64": "BIGINT",
@@ -128,6 +166,63 @@ class DBUtils:
     def __init__(self, values: dict[str, str]) -> None:
         self.widgets = Widgets(values)
         self.secrets = Secrets()
+
+
+class Run(Protocol):
+    def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]: ...
+
+
+def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, capture_output=True, text=True, check=False, timeout=180)  # noqa: S603
+
+
+def static_check(notebook: Path, workdir: Path = STATIC, run: Run = _run) -> list[dict[str, Any]]:
+    """ruff and mypy findings for the notebook, in notebook lines; empty means clean.
+
+    A tool that cannot run is a finding too: the gate fails closed.
+    """
+    findings: list[dict[str, Any]] = []
+    ruff = run([sys.executable, "-m", "ruff", *RUFF, str(notebook)])
+    if ruff.returncode in (0, 1):
+        for item in json.loads(ruff.stdout or "[]"):
+            location = item.get("location") or {}
+            findings.append(
+                {
+                    "tool": "ruff",
+                    "code": item.get("code") or "error",
+                    "line": location.get("row"),
+                    "message": " ".join(str(item.get("message", "")).split())[:600],
+                }
+            )
+    else:
+        findings.append(_broken("ruff", ruff))
+    workdir.mkdir(parents=True, exist_ok=True)
+    checked = workdir / "notebook.py"
+    checked.write_text(PRELUDE + notebook.read_text(encoding="utf-8"), encoding="utf-8")
+    offset = PRELUDE.count("\n")
+    mypy = run([sys.executable, "-m", "mypy", *MYPY, str(checked)])
+    if mypy.returncode in (0, 1):
+        for text in mypy.stdout.splitlines():
+            match = MYPY_LINE.match(text.strip())
+            if match:
+                line = int(match.group(1)) - offset
+                findings.append(
+                    {
+                        "tool": "mypy",
+                        "code": match.group(3),
+                        "line": line if line > 0 else None,
+                        "message": match.group(2)[:600],
+                    }
+                )
+    else:
+        findings.append(_broken("mypy", mypy))
+    return findings
+
+
+def _broken(tool: str, done: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    tail = " ".join((done.stderr or done.stdout or "").split())[-600:]
+    message = tail or f"exit {done.returncode}"
+    return {"tool": tool, "code": "crashed", "line": None, "message": message}
 
 
 def probe() -> dict[str, Any]:  # pragma: no cover - container only
@@ -232,6 +327,11 @@ def main() -> None:  # pragma: no cover - container only
         result["probe"] = probe()
     else:
         started = time.monotonic()
+        result["static"] = static_check(JOB / "notebook.py")
+        if result["static"]:
+            result["seconds"] = round(time.monotonic() - started, 1)
+            (OUT / "result.json").write_text(json.dumps(result), encoding="utf-8")
+            return
         try:
             spark = spark_session()
             load_tables(spark, job)

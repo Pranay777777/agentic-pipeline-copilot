@@ -146,6 +146,46 @@ def test_dbutils_stand_in_gives_widgets_and_refuses_secrets() -> None:
     )
 
 
+# --- static gate (ruff and mypy run for real; in the container they run on /job) -----
+
+
+def test_a_clean_notebook_passes_the_static_gate(
+    make_plan: Make, make_draft: Make, tmp_path: Path
+) -> None:
+    text = render(NotebookDraft.model_validate(make_draft()), Plan.model_validate(make_plan()))
+    notebook = tmp_path / "notebook.py"
+    notebook.write_text(text, encoding="utf-8")
+    assert harness.static_check(notebook, tmp_path / "static") == []
+
+
+def test_static_findings_come_back_in_notebook_lines(tmp_path: Path) -> None:
+    notebook = tmp_path / "notebook.py"
+    notebook.write_text(
+        "# Databricks notebook source\nrows = spark.table(target_table)\ndisplay(rows)\n",
+        encoding="utf-8",
+    )
+    findings = harness.static_check(notebook, tmp_path / "static")
+    assert {(f["tool"], f["code"], f["line"]) for f in findings} == {
+        ("ruff", "F821", 2),
+        ("mypy", "name-defined", 2),
+    }
+    assert all("target_table" in f["message"] for f in findings)
+    prelude = (tmp_path / "static" / "notebook.py").read_text("utf-8")
+    assert prelude.startswith(harness.PRELUDE)
+
+
+def test_a_tool_that_cannot_run_fails_the_gate(tmp_path: Path) -> None:
+    notebook = tmp_path / "notebook.py"
+    notebook.write_text("x = 1\n", encoding="utf-8")
+
+    def broken(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 2, "", "No module named mypy\n")
+
+    findings = harness.static_check(notebook, tmp_path / "static", run=broken)
+    assert [(f["tool"], f["code"]) for f in findings] == [("ruff", "crashed"), ("mypy", "crashed")]
+    assert findings[1]["message"] == "No module named mypy"
+
+
 # --- sandbox CLI -----------------------------------------------------------------
 
 
@@ -193,5 +233,5 @@ def test_build_runs_docker_build(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert sandbox_main(["build"]) == 0
-    assert seen == [["docker", "build", "--tag", "copilot-sandbox:0.1", "sandbox"]]
+    assert seen == [["docker", "build", "--tag", "copilot-sandbox:0.2", "sandbox"]]
     assert "docker build" in capsys.readouterr().out

@@ -24,7 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-DEFAULT_IMAGE = "copilot-sandbox:0.1"
+DEFAULT_IMAGE = "copilot-sandbox:0.2"
+"""0.2 adds ruff, mypy and pytest for the static gate and generated tests (ADR-006)."""
 
 
 @dataclass(frozen=True)

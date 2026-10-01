@@ -93,6 +93,7 @@ class Run:
                     if r.validation is None
                     else {
                         "errors": [str(e) for e in r.validation.errors],
+                        "static": list(r.validation.static),
                         "checks": list(r.validation.checks),
                         "seconds": r.validation.seconds,
                     },
