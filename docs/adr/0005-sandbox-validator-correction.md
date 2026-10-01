@@ -23,7 +23,10 @@ the copilot's own process.
   `--memory` (= swap), `--pids-limit`, a size-capped `/tmp`, the job mounted
   read-only and only `/out` writable. The hostname is `localhost` (and
   `SPARK_LOCAL_IP=127.0.0.1`): with no network a random container hostname
-  resolves to nothing and Spark's JVM exits at start-up. No host environment is passed in. A
+  resolves to nothing and Spark's JVM exits at start-up. `/tmp` is mounted
+  `exec,nosuid,nodev`: Spark's snappy codec loads a native library it unpacks
+  there, and since the generated Python can already run anything inside the
+  container, `noexec` would block Spark without stopping an attacker. No host environment is passed in. A
   run that exceeds the timeout is killed with `docker kill`.
 - **Isolation is proved, not asserted.** `python -m copilot.sandbox check`
   runs a probe inside the real container that tries the network, DNS,

@@ -33,7 +33,7 @@ def test_the_container_is_started_with_every_isolation_flag(tmp_path: Path) -> N
         "--memory 2g",
         "--memory-swap 2g",
         "--pids-limit 512",
-        "--tmpfs /tmp:rw,size=1g",
+        "--tmpfs /tmp:rw,exec,nosuid,nodev,size=1g",
         "--rm",
         "--hostname localhost",
         "--env SPARK_LOCAL_IP=127.0.0.1",

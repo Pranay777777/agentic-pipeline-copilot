@@ -5,8 +5,8 @@ The container gets:
 - **no network** (`--network none`) - generated code cannot exfiltrate data
   or fetch anything; the hostname is `localhost` so Spark can resolve itself;
 - a **read-only root filesystem** and a read-only job mount; the only
-  writable places are a size-capped `/tmp` and the `/out` directory for the
-  result;
+  writable places are a size-capped `/tmp` (nosuid, nodev) and the `/out`
+  directory for the result;
 - **no capabilities**, `no-new-privileges`, a non-root user;
 - **CPU, memory (no swap) and process caps**;
 - a **hard timeout**, after which the container is killed, not asked.
@@ -80,7 +80,9 @@ def docker_command(
         "--pids-limit",
         str(limits.pids),
         "--tmpfs",
-        f"/tmp:rw,size={limits.tmp_size}",  # noqa: S108 - inside the container
+        # exec: Spark's native codecs (snappy) unpack a .so into /tmp and load it; the
+        # generated Python can already run anything in here, so noexec adds nothing.
+        f"/tmp:rw,exec,nosuid,nodev,size={limits.tmp_size}",  # noqa: S108 - in the container
         "--env",
         "HOME=/tmp",
         # With no network the container's random hostname resolves to nothing, and
