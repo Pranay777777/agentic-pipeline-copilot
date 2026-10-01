@@ -1,12 +1,15 @@
 """Agents CLI.
 
     python -m copilot.agents run "Load orders incrementally into Silver, newest row per order"
-        [--out notebooks/orders_silver.py] [--trace runs/orders.json]
+        [--out notebooks/orders_silver.py] [--trace runs/orders.json] [--no-sandbox]
     python -m copilot.agents plan "..."
     python -m copilot.agents review notebooks/orders_silver.py
 
-`run` and `plan` call the model (OPENROUTER_API_KEY, LLM_MODEL - ADR-004);
-`review` runs the Critic's rules on any notebook and needs no key.
+`run` and `plan` call the model (OPENROUTER_API_KEY, LLM_MODEL - ADR-004).
+`run` executes the notebook in the sandbox (Docker, image built with
+`python -m copilot.sandbox build` - ADR-005); `--no-sandbox` stops after
+review and the result is "reviewed", never "ready". `review` runs the
+Critic's rules on any notebook and needs no key.
 """
 
 from __future__ import annotations
@@ -18,10 +21,12 @@ from pathlib import Path
 
 from copilot.agents.base import Attempt, Catalog, StageRejectedError
 from copilot.agents.critic import review
-from copilot.agents.pipeline import Pipeline
+from copilot.agents.pipeline import Pipeline, diagnostic_report
+from copilot.agents.validator import Validator
 from copilot.catalog.model import read_snapshot
 from copilot.config import Settings, get_settings
 from copilot.llm import LLM, LLMError, OpenRouterLLM
+from copilot.sandbox.runner import DockerSandbox, Limits, Sandbox
 
 SNAPSHOT = Path("catalog/snapshot.jsonl")
 
@@ -49,17 +54,30 @@ def make_llm(settings: Settings) -> LLM:
     )
 
 
-def main(argv: list[str] | None = None, llm: LLM | None = None) -> int:
+def make_sandbox(settings: Settings) -> DockerSandbox:
+    limits = Limits(
+        cpus=settings.sandbox_cpus,
+        memory=settings.sandbox_memory,
+        timeout_s=settings.sandbox_timeout_s,
+    )
+    return DockerSandbox(settings.sandbox_image, limits)
+
+
+def main(
+    argv: list[str] | None = None, llm: LLM | None = None, sandbox: Sandbox | None = None
+) -> int:
     parser = argparse.ArgumentParser(
         prog="copilot.agents",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    run = sub.add_parser("run", help="plan, generate and review one notebook")
+    run = sub.add_parser("run", help="plan, generate, review and execute one notebook")
     run.add_argument("spec")
     run.add_argument("--out", type=Path, help="write the notebook here when it is ready")
-    run.add_argument("--trace", type=Path, help="write the run's attempts and reviews as JSON")
+    run.add_argument("--trace", type=Path, help="write the run's trajectory as JSON")
+    run.add_argument("--report", type=Path, help="where to write the report if it escalates")
+    run.add_argument("--no-sandbox", action="store_true", help="stop after review (not ready)")
     plan = sub.add_parser("plan", help="plan only, checked against the catalog")
     plan.add_argument("spec")
     check = sub.add_parser("review", help="run the Critic's rules on a notebook")
@@ -75,12 +93,25 @@ def main(argv: list[str] | None = None, llm: LLM | None = None) -> int:
 
     settings = get_settings()
     catalog = Catalog(read_snapshot(SNAPSHOT))
+    validator = None
+    if args.command == "run" and not args.no_sandbox:
+        sandbox = sandbox or make_sandbox(settings)
+        if isinstance(sandbox, DockerSandbox) and not sandbox.available():
+            print(
+                f"error: sandbox image '{settings.sandbox_image}' not found - start Docker and "
+                "run `python -m copilot.sandbox build` (or pass --no-sandbox)",
+                file=sys.stderr,
+            )
+            return 2
+        validator = Validator(sandbox, catalog)
     try:
         llm = llm or make_llm(settings)
     except LLMError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    pipeline = Pipeline(llm, catalog, settings.agent_max_attempts, settings.critic_max_rounds)
+    pipeline = Pipeline(
+        llm, catalog, settings.agent_max_attempts, settings.correction_max_rounds, validator
+    )
     try:
         if args.command == "plan":
             print(pipeline.planner.plan(args.spec).model_dump_json(indent=2))
@@ -97,17 +128,24 @@ def main(argv: list[str] | None = None, llm: LLM | None = None) -> int:
     if args.trace:
         args.trace.parent.mkdir(parents=True, exist_ok=True)
         args.trace.write_text(json.dumps(result.summary(), indent=2), encoding="utf-8")
-    calls = f"{len(result.attempts)} model call(s), {result.tokens} tokens"
-    if result.status == "rejected":
-        print(
-            f"rejected at {result.stage} ({calls}):", *result.reasons, sep="\n- ", file=sys.stderr
-        )
+    calls = (
+        f"{len(result.attempts)} model call(s), {result.tokens} tokens, "
+        f"{result.corrections} correction(s)"
+    )
+    if result.status in ("rejected", "escalated"):
+        target = result.plan.target if result.plan else "run"
+        report = args.report or Path("runs") / f"{target}.report.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(diagnostic_report(result), encoding="utf-8")
+        reasons = "\n- ".join(result.reasons)
+        print(f"{result.status} at {result.stage} ({calls}):\n- {reasons}", file=sys.stderr)
+        print(f"diagnostic report: {report}", file=sys.stderr)
         return 1
     assert result.notebook is not None and result.plan is not None
     out = args.out or Path("notebooks") / f"{result.plan.target}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(result.notebook, encoding="utf-8", newline="\n")
-    print(f"ready: {out} ({calls})")
+    print(f"{result.status}: {out} ({calls})")
     return 0
 
 

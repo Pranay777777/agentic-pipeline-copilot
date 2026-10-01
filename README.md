@@ -9,8 +9,9 @@
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Status:** early. The catalog and the first three agents (plan, generate,
-> review) work; the sandbox, validator and pull-request tool come next. Nothing is listed as working until it is tested, and every number
+> **Status:** early. The catalog, the agents (plan, generate, review) and the
+> sandboxed execution loop work; static analysis, tests and the pull-request
+> tool come next. Nothing is listed as working until it is tested, and every number
 > links to the run that produced it.
 
 ## The problem
@@ -52,7 +53,7 @@ them, everything bounded, and a single-prompt baseline measured alongside.
 |---|---|---|
 | Catalog retrieval (BM25) | **Recall@5 0.94 · MRR 0.84** (Recall@1 0.60, Recall@3 0.85) | [24 labelled questions](docs/results/catalog-retrieval.md) over 49 documents from metadata-driven-lakehouse v1.0.0 |
 | First-try notebook success | - | agent eval suite (step 78) |
-| Sandbox isolation | - | step 69 |
+| Sandbox isolation | network, DNS, job and root writes blocked; non-root; no secrets | `python -m copilot.sandbox check`, run in CI on every push |
 
 ## Try the catalog
 
@@ -68,11 +69,18 @@ python -m copilot.catalog snapshot --lakehouse ../metadata-driven-lakehouse
 ## Try the agents
 
 ```bash
-# OPENROUTER_API_KEY in .env (a free key from openrouter.ai/keys)
+# OPENROUTER_API_KEY in .env (a free key from openrouter.ai/keys); Docker running
+python -m copilot.sandbox build     # the pinned sandbox image (once)
+python -m copilot.sandbox check     # proves: no network, read-only, non-root, no secrets
 python -m copilot.agents run "Load orders incrementally into Silver, one row per order_id, newest wins" \
     --trace runs/orders.json
 python -m copilot.agents review notebooks/orders_silver.py   # the Critic's rules; no key needed
 ```
+
+Every notebook runs on sample data in the sandbox before it is called ready;
+review findings and execution errors go back to the Generator for at most two
+correction rounds, then the run escalates with a diagnostic report
+([ADR-005](docs/adr/0005-sandbox-validator-correction.md)).
 
 The Planner's plan is checked against the catalog, the Generator's cells
 must cite the catalog patterns they follow, and the Critic's rules enforce
@@ -85,7 +93,7 @@ Notebooks are Databricks source files (`.py`).
 - [x] Repository, CI gates and the multi-agent decision ([ADR-002](docs/adr/0002-multi-agent-vs-single-prompt.md))
 - [x] Catalog index over the lakehouse's metadata ([ADR-003](docs/adr/0003-catalog-index.md))
 - [x] Planner, Generator and Critic agents ([ADR-004](docs/adr/0004-planner-generator-critic.md))
-- [ ] Sandboxed executor and Validator with a bounded self-correction loop
+- [x] Sandboxed executor and Validator with a bounded self-correction loop ([ADR-005](docs/adr/0005-sandbox-validator-correction.md))
 - [ ] Static-analysis gate and generated tests
 - [ ] Pull-request tool (least privilege, never merges) and an MCP tool layer
 - [ ] Deterministic replay, cost governor, agent eval suite and CI gate
