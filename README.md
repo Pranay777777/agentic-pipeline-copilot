@@ -5,14 +5,15 @@
 > pull request - never merged by the agent.
 
 [![CI](https://github.com/Pranay777777/agentic-pipeline-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranay777777/agentic-pipeline-copilot/actions/workflows/ci.yml)
-![Status](https://img.shields.io/badge/status-in%20development-orange)
+![Status](https://img.shields.io/badge/status-feature--complete-yellowgreen)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **Status:** early. The catalog, the agents (plan, generate, review) and the
-> sandboxed execution loop work; static analysis, tests and the pull-request
-> tool come next. Nothing is listed as working until it is tested, and every number
-> links to the run that produced it.
+> **Status:** feature-complete: catalog, agents, sandboxed execution with
+> self-correction, static gate, generated tests, pull requests, MCP tools,
+> replay and the cost governor all work and are tested. The 50-spec eval suite
+> is being recorded in daily batches on a free model tier (3/50 so far);
+> v1.0.0 is tagged when it is complete. Every number links to the run that produced it.
 
 ## The problem
 
@@ -52,7 +53,7 @@ them, everything bounded, and a single-prompt baseline measured alongside.
 | Metric | Value | How measured |
 |---|---|---|
 | Catalog retrieval (BM25) | **Recall@5 0.94 · MRR 0.84** (Recall@1 0.60, Recall@3 0.85) | [24 labelled questions](docs/results/catalog-retrieval.md) over 49 documents from metadata-driven-lakehouse v1.0.0 |
-| First-try notebook success | - | agent eval suite (step 78) |
+| Eval suite (recorded specs) | **3/3 pass · first try 0%** · avg 0.0 correction(s), 11020 tokens | [replayed in CI](docs/adr/0008-eval-suite-replayed-gate.md); 3 of 50 specs recorded so far |
 | Sandbox isolation | network, DNS, job and root writes blocked; non-root; no secrets | `python -m copilot.sandbox check`, run in CI on every push |
 
 ## Try the catalog
@@ -87,6 +88,24 @@ python -m copilot.agents run "..." --replay runs/orders.cassette.jsonl
 
 Every run has a budget - 8 model calls and 60 000 tokens by default
 (`RUN_MAX_CALLS`, `RUN_MAX_TOKENS`) - and stops hard when it is spent.
+
+## Demo
+
+A recorded live run, replayed (no model, no network) and executed for real in the
+sandbox: spec → plan → notebook → review → sandbox → generated tests → ready.
+
+![Demo: the orders spec from English to a ready notebook](docs/images/demo.gif)
+
+The model calls come from [`tests/cassettes/orders_silver.jsonl`](tests/cassettes/orders_silver.jsonl),
+a real Gemini run; CI replays it on every push. A live run opened
+[copilot-playground#1](https://github.com/Pranay777777/copilot-playground/pull/1) - the agent never merges.
+
+![Agent eval suite, replayed from recorded runs](docs/images/eval-report.svg)
+
+Failures are part of the record: a stage sent back, then recovered within the
+two-round correction budget ([ADR-005](docs/adr/0005-sandbox-validator-correction.md)).
+
+![A failure and its recovery](docs/images/recovery.svg)
 
 ## How good is it? The eval suite
 
@@ -149,7 +168,8 @@ Notebooks are Databricks source files (`.py`).
 - [x] MCP tool layer, deterministic replay and a per-run cost governor ([ADR-007](docs/adr/0007-mcp-tools-replay-cost-governor.md))
 - [x] Agent eval suite (50 specs, recorded once, replayed in CI) and its regression gate ([ADR-008](docs/adr/0008-eval-suite-replayed-gate.md))
 - [x] [Threat model](docs/threat-model.md) mapped to the OWASP Agentic Top 10 and MCP Top 10
-- [ ] Demo GIF, published eval table and the v1.0.0 release
+- [x] Demo GIF and published eval table
+- [ ] All 50 eval specs recorded, then the v1.0.0 release
 
 ## Development
 
