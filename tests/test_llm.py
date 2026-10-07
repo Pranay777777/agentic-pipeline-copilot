@@ -202,3 +202,27 @@ def test_googles_list_wrapped_errors_are_reported() -> None:
     wrapped = [{"error": {"code": 400, "message": "API key not valid.", "status": "INVALID"}}]
     with pytest.raises(LLMError, match=r"400: API key not valid\."):
         client(httpx.Response(400, json=wrapped)).complete([])
+
+
+def _raising(exc: Exception) -> OpenRouterLLM:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    return OpenRouterLLM(
+        SecretStr("k"), "m", transport=httpx.MockTransport(handler), sleep=lambda _: None
+    )
+
+
+def test_errors_say_whether_trying_again_later_could_help() -> None:
+    """copilot.evals record retries only transient errors: timeouts, 429 and 5xx."""
+    cases = [
+        (client(*[httpx.Response(503, json={"error": {"message": "busy"}})] * 4), 503, True),
+        (client(*[httpx.Response(429, json={"error": {"message": "slow"}})] * 4), 429, True),
+        (client(httpx.Response(400, json={"error": {"message": "bad schema"}})), 400, False),
+        (_raising(httpx.ReadTimeout("slow")), None, True),
+        (_raising(httpx.ConnectError("no route")), None, False),
+    ]
+    for llm, status, transient in cases:
+        with pytest.raises(LLMError) as caught:
+            llm.complete([{"role": "user", "content": "hi"}])
+        assert (caught.value.status, caught.value.transient) == (status, transient), caught.value

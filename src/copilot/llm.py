@@ -32,7 +32,20 @@ Message = dict[str, str]
 
 
 class LLMError(RuntimeError):
-    """The provider could not produce a response."""
+    """The provider could not produce a response.
+
+    `transient` marks failures worth trying again later - a timeout, a 429 or a 5xx - as
+    opposed to ones that will fail the same way every time (a 4xx, a malformed body).
+    """
+
+    def __init__(self, message: str, *, status: int | None = None, transient: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.transient = transient
+
+
+def _transient(status: int) -> bool:
+    return status == 429 or 500 <= status < 600
 
 
 class EmptyCompletionError(LLMError):
@@ -116,14 +129,22 @@ class OpenRouterLLM:
                 response = self._http.post("/chat/completions", json=body)
             except httpx.TransportError as exc:
                 if last:
-                    raise LLMError(f"could not reach the provider: {type(exc).__name__}") from exc
+                    raise LLMError(
+                        f"could not reach the provider: {type(exc).__name__}",
+                        transient=isinstance(exc, httpx.TimeoutException),
+                    ) from exc
                 self._sleep(float(2**attempt))
                 continue
             if response.status_code in RETRYABLE and not last:
                 self._sleep(_backoff(response, attempt))
                 continue
             if response.status_code >= 400:
-                raise LLMError(f"provider returned {response.status_code}: {_reason(response)}")
+                status = response.status_code
+                raise LLMError(
+                    f"provider returned {status}: {_reason(response)}",
+                    status=status,
+                    transient=_transient(status),
+                )
             try:
                 payload = response.json()
             except ValueError as exc:
@@ -136,7 +157,11 @@ class OpenRouterLLM:
                 if status in RETRYABLE and not last:
                     self._sleep(float(2**attempt))
                     continue
-                raise LLMError(f"provider returned {status}: {str(error.get('message'))[:300]}")
+                raise LLMError(
+                    f"provider returned {status}: {str(error.get('message'))[:300]}",
+                    status=status,
+                    transient=_transient(status),
+                )
             try:
                 return _parse(payload, self.model)
             except EmptyCompletionError:
