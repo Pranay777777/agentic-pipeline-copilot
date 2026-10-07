@@ -9,6 +9,9 @@
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+**[Build log: running code an LLM wrote, safely](docs/build-log.md)** - a sandbox
+first, then self-correction (5-minute read).
+
 > **Status:** feature-complete: catalog, agents, sandboxed execution with
 > self-correction, static gate, generated tests, pull requests, MCP tools,
 > replay and the cost governor all work and are tested. The 50-spec eval suite
