@@ -11,8 +11,11 @@ produce (strategy, layer, sources, keys - only what the spec pins down). A
 spec passes when the run ends `reviewed` and its plan matches.
 
 Recording is live and slow on free tiers (about 20 requests a day), so it
-is done in batches: `record` skips specs that already have a cassette and
-stops at the first provider error, keeping what it recorded. Everything else
+is done in batches: `record` skips specs that already have a cassette. A
+transient provider error (timeout, 429, 5xx) is retried after 5 s and 15 s; if
+the spec still fails it is left "pending (transient)" - no cassette, not an eval
+failure - and recording moves on after a 45 s pause. Any other error stops the
+batch, keeping what it recorded. Everything else
 replays cassettes - no model, no key, no network - so the gate runs in CI on
 every push for free (ADR-008).
 
@@ -28,6 +31,8 @@ import argparse
 import io
 import json
 import sys
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,6 +46,9 @@ from copilot.replay import RecordingLLM, ReplayLLM
 
 ROOT = Path(__file__).resolve().parents[2]
 THRESHOLD = 0.8
+BACKOFF = (5.0, 15.0, 45.0)
+"""Seconds to wait after each failed attempt at a spec: three attempts, and a pause before
+the next spec so it does not land on the same overloaded provider."""
 
 
 @dataclass
@@ -156,6 +164,15 @@ def gate(
     return not reasons, reasons
 
 
+@dataclass
+class Recording:
+    recorded: int = 0
+    pending: list[str] = field(default_factory=list)
+    """Specs that kept hitting transient provider errors: no cassette, not a failure."""
+    error: str | None = None
+    """A non-transient error that stopped the batch."""
+
+
 def record(
     specs: list[dict[str, Any]],
     catalog: Catalog,
@@ -163,23 +180,40 @@ def record(
     make: Any,
     limit: int,
     force: bool,
-) -> tuple[int, str | None]:
-    """Record up to `limit` specs live; stop at the first provider error. (recorded, error)."""
-    done = 0
+    sleep: Callable[[float], None] | None = None,
+    backoff: Sequence[float] = BACKOFF,
+) -> Recording:
+    """Record up to `limit` specs live. Transient provider errors are retried with backoff,
+    then the spec is left pending and the next one is tried; any other error stops."""
+    pause = sleep or time.sleep
+    result = Recording()
     for spec in specs:
         tape = cassettes / f"{spec['id']}.jsonl"
-        if done >= limit:
+        if result.recorded >= limit:
             break
         if tape.exists() and not force:
             continue
-        try:
-            Pipeline(RecordingLLM(make(), tape), catalog, budget=Budget()).run(spec["spec"])
-        except LLMError as exc:
-            tape.unlink(missing_ok=True)  # a half-recorded run would replay as stale
-            return done, f"{spec['id']}: {exc}"
-        done += 1
+        for attempt, wait in enumerate(backoff, start=1):
+            try:
+                Pipeline(RecordingLLM(make(), tape), catalog, budget=Budget()).run(spec["spec"])
+                break
+            except LLMError as exc:
+                tape.unlink(missing_ok=True)  # a half-recorded run would replay as stale
+                if not exc.transient:
+                    result.error = f"{spec['id']}: {exc}"
+                    return result
+                print(
+                    f"  {spec['id']}: attempt {attempt}/{len(backoff)} - {exc}; waiting {wait:g}s",
+                    file=sys.stderr,
+                )
+                pause(wait)
+        else:
+            result.pending.append(spec["id"])
+            print(f"  {spec['id']}: pending (transient)", file=sys.stderr)
+            continue
+        result.recorded += 1
         print(f"  recorded {spec['id']}", file=sys.stderr)
-    return done, None
+    return result
 
 
 def render(report: dict[str, Any], images: Path) -> list[Path]:
@@ -267,11 +301,13 @@ def main(argv: list[str] | None = None, make: Any = None, root: Path = ROOT) -> 
         if not chosen:
             print(f"error: no spec '{args.only}'", file=sys.stderr)
             return 2
-        done, error = record(chosen, catalog, cassettes, make, args.limit, args.force)
+        result = record(chosen, catalog, cassettes, make, args.limit, args.force)
         left = sum(not (cassettes / f"{s['id']}.jsonl").exists() for s in specs)
-        print(f"recorded {done}; {left} of {len(specs)} specs still unrecorded")
-        if error:
-            print(f"stopped: {error}", file=sys.stderr)
+        print(f"recorded {result.recorded}; {left} of {len(specs)} specs still unrecorded")
+        if result.pending:
+            print(f"pending (transient): {', '.join(result.pending)}")
+        if result.error:
+            print(f"stopped: {result.error}", file=sys.stderr)
             return 2
         return 0
 

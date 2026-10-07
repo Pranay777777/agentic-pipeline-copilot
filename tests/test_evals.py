@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from copilot.evals import load_specs, main
-from copilot.llm import LLM, ScriptedLLM
+from copilot.llm import LLM, LLMError, ScriptedLLM
 
 Make = Callable[..., dict[str, Any]]
 REPO = Path(__file__).resolve().parents[1]
@@ -141,3 +141,98 @@ def test_a_failure_and_its_recovery_is_rendered(
     main(["render"], root=root)
     svg = (root / "docs" / "images" / "recovery.svg").read_text("utf-8")
     assert "would" in svg and "overwrite" in svg
+
+
+class FailingLLM:
+    """A provider that fails the way the real client reports it."""
+
+    def __init__(self, error: LLMError) -> None:
+        self.error = error
+        self.model = "failing"
+
+    def complete(self, messages: Any) -> Any:
+        raise self.error
+
+
+def providers(*llms: LLM) -> Callable[[], LLM]:
+    queue: Iterator[LLM] = iter(llms)
+    return lambda: next(queue)
+
+
+UNAVAILABLE = LLMError("provider returned 503: high demand", status=503, transient=True)
+TIMEOUT = LLMError("could not reach the provider: ReadTimeout", transient=True)
+SCHEMA = LLMError("provider returned 400: response_format is invalid", status=400)
+
+
+@pytest.fixture
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    slept: list[float] = []
+    monkeypatch.setattr("copilot.evals.time.sleep", slept.append)
+    return slept
+
+
+def test_a_503_then_success_records(
+    root: Path,
+    make_plan: Make,
+    make_draft: Make,
+    waits: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good = [json.dumps(make_plan()), json.dumps(make_draft())]
+    make = providers(FailingLLM(UNAVAILABLE), ScriptedLLM(good))
+    assert main(["record", "--only", "a"], make=make, root=root) == 0
+    captured = capsys.readouterr()
+    assert "recorded 1;" in captured.out and "pending" not in captured.out
+    assert "a: attempt 1/3 - provider returned 503" in captured.err
+    assert waits == [5.0]
+    assert (root / "evals" / "cassettes" / "a.jsonl").exists()
+
+
+def test_three_timeouts_leave_a_spec_pending_and_the_next_one_records(
+    root: Path,
+    make_plan: Make,
+    make_draft: Make,
+    waits: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good = [json.dumps(make_plan()), json.dumps(make_draft())]
+    make = providers(*[FailingLLM(TIMEOUT)] * 3, ScriptedLLM(good))
+    assert main(["record", "--limit", "1"], make=make, root=root) == 0
+    captured = capsys.readouterr()
+    assert "recorded 1; 2 of 3 specs still unrecorded" in captured.out
+    assert "pending (transient): a" in captured.out
+    assert waits == [5.0, 15.0, 45.0]
+    cassettes = root / "evals" / "cassettes"
+    assert not (cassettes / "a.jsonl").exists() and (cassettes / "b.jsonl").exists()
+    # a pending spec is unrecorded, never a failure
+    assert main(["gate"], root=root) == 0
+    report = json.loads((root / "evals" / "report.json").read_text("utf-8"))
+    assert report["summary"]["recorded"] == 1 and report["summary"]["passed"] == 1
+
+
+def test_a_429_counts_as_transient(
+    root: Path, make_plan: Make, make_draft: Make, waits: list[float]
+) -> None:
+    good = [json.dumps(make_plan()), json.dumps(make_draft())]
+    limited = LLMError("provider returned 429: slow down", status=429, transient=True)
+    make = providers(FailingLLM(limited), FailingLLM(limited), ScriptedLLM(good))
+    assert main(["record", "--only", "a"], make=make, root=root) == 0
+    assert waits == [5.0, 15.0]
+
+
+def test_a_schema_error_still_stops_the_batch(
+    root: Path,
+    make_plan: Make,
+    make_draft: Make,
+    waits: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good = [json.dumps(make_plan()), json.dumps(make_draft())]
+    make = providers(ScriptedLLM(good), FailingLLM(SCHEMA), ScriptedLLM(good))
+    assert main(["record"], make=make, root=root) == 2
+    captured = capsys.readouterr()
+    assert (
+        "recorded 1; 2 of 3" in captured.out and "stopped: b: provider returned 400" in captured.err
+    )
+    assert waits == []  # not retried
+    assert not (root / "evals" / "cassettes" / "c.jsonl").exists()  # the batch stopped at b
