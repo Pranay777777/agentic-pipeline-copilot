@@ -226,3 +226,39 @@ def test_errors_say_whether_trying_again_later_could_help() -> None:
         with pytest.raises(LLMError) as caught:
             llm.complete([{"role": "user", "content": "hi"}])
         assert (caught.value.status, caught.value.transient) == (status, transient), caught.value
+
+
+def _google_429(retry: str) -> httpx.Response:
+    message = (
+        "You exceeded your current quota, please check your plan and billing details.\n"
+        "* Quota exceeded for metric: generativelanguage.googleapis.com/"
+        "generate_content_free_tier_requests, limit: 20, model: gemini-flash\n"
+        f"Please retry in {retry}."
+    )
+    return httpx.Response(429, json=[{"error": {"code": 429, "message": message}}])
+
+
+def test_an_exhausted_daily_quota_is_not_retried() -> None:
+    """Retrying cannot help until the provider resets, and every retry spends a request."""
+    for response in (
+        _google_429("5h48m4.3s"),
+        httpx.Response(
+            429, json={"error": {"message": "Rate limit exceeded: free-models-per-day"}}
+        ),
+    ):
+        sleeps: list[float] = []
+        llm = client(response, sleeps=sleeps)
+        with pytest.raises(LLMError) as caught:
+            llm.complete([])
+        assert (caught.value.quota, caught.value.transient) == (True, False)
+        assert len(llm.seen) == 1 and sleeps == []  # type: ignore[attr-defined]
+
+
+def test_a_per_minute_quota_is_a_plain_rate_limit() -> None:
+    sleeps: list[float] = []
+    llm = client(_google_429("41.4s"), httpx.Response(200, json=OK), sleeps=sleeps)
+    assert llm.complete([]).text == '{"a": 1}'
+    assert sleeps == [5.0]
+    with pytest.raises(LLMError) as caught:
+        client(*[_google_429("1m3s")] * 4).complete([])
+    assert (caught.value.quota, caught.value.transient) == (False, True)

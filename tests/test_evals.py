@@ -162,6 +162,7 @@ def providers(*llms: LLM) -> Callable[[], LLM]:
 UNAVAILABLE = LLMError("provider returned 503: high demand", status=503, transient=True)
 TIMEOUT = LLMError("could not reach the provider: ReadTimeout", transient=True)
 SCHEMA = LLMError("provider returned 400: response_format is invalid", status=400)
+QUOTA = LLMError("provider returned 429: Quota exceeded; retry in 5h", status=429, quota=True)
 
 
 @pytest.fixture
@@ -210,7 +211,7 @@ def test_three_timeouts_leave_a_spec_pending_and_the_next_one_records(
     assert report["summary"]["recorded"] == 1 and report["summary"]["passed"] == 1
 
 
-def test_a_429_counts_as_transient(
+def test_a_plain_429_rate_limit_is_retried(
     root: Path, make_plan: Make, make_draft: Make, waits: list[float]
 ) -> None:
     good = [json.dumps(make_plan()), json.dumps(make_draft())]
@@ -236,3 +237,21 @@ def test_a_schema_error_still_stops_the_batch(
     )
     assert waits == []  # not retried
     assert not (root / "evals" / "cassettes" / "c.jsonl").exists()  # the batch stopped at b
+
+
+def test_an_exhausted_daily_quota_stops_the_batch_at_once(
+    root: Path,
+    make_plan: Make,
+    make_draft: Make,
+    waits: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good = [json.dumps(make_plan()), json.dumps(make_draft())]
+    make = providers(ScriptedLLM(good), FailingLLM(QUOTA), ScriptedLLM(good))
+    assert main(["record"], make=make, root=root) == 2
+    captured = capsys.readouterr()
+    assert "recorded 1; 2 of 3" in captured.out and "pending" not in captured.out
+    assert "stopped: daily quota exhausted, retry after reset" in captured.err
+    assert waits == []  # not retried
+    cassettes = root / "evals" / "cassettes"
+    assert not (cassettes / "b.jsonl").exists() and not (cassettes / "c.jsonl").exists()
