@@ -14,8 +14,9 @@ Recording is live and slow on free tiers (about 20 requests a day), so it
 is done in batches: `record` skips specs that already have a cassette. A
 transient provider error (timeout, 429, 5xx) is retried after 5 s and 15 s; if
 the spec still fails it is left "pending (transient)" - no cassette, not an eval
-failure - and recording moves on after a 45 s pause. Any other error stops the
-batch, keeping what it recorded. Everything else
+failure - and recording moves on after a 45 s pause. A 429 saying the daily quota
+is used up stops the batch at once: no retry, nothing marked pending. Any other
+error stops the batch too, keeping what it recorded. Everything else
 replays cassettes - no model, no key, no network - so the gate runs in CI on
 every push for free (ADR-008).
 
@@ -171,6 +172,8 @@ class Recording:
     """Specs that kept hitting transient provider errors: no cassette, not a failure."""
     error: str | None = None
     """A non-transient error that stopped the batch."""
+    quota: bool = False
+    """The batch stopped because the provider's daily quota is used up."""
 
 
 def record(
@@ -184,7 +187,8 @@ def record(
     backoff: Sequence[float] = BACKOFF,
 ) -> Recording:
     """Record up to `limit` specs live. Transient provider errors are retried with backoff,
-    then the spec is left pending and the next one is tried; any other error stops."""
+    then the spec is left pending and the next one is tried; an exhausted daily quota or
+    any other error stops."""
     pause = sleep or time.sleep
     result = Recording()
     for spec in specs:
@@ -201,6 +205,7 @@ def record(
                 tape.unlink(missing_ok=True)  # a half-recorded run would replay as stale
                 if not exc.transient:
                     result.error = f"{spec['id']}: {exc}"
+                    result.quota = exc.quota
                     return result
                 print(
                     f"  {spec['id']}: attempt {attempt}/{len(backoff)} - {exc}; waiting {wait:g}s",
@@ -306,6 +311,9 @@ def main(argv: list[str] | None = None, make: Any = None, root: Path = ROOT) -> 
         print(f"recorded {result.recorded}; {left} of {len(specs)} specs still unrecorded")
         if result.pending:
             print(f"pending (transient): {', '.join(result.pending)}")
+        if result.quota:
+            print("stopped: daily quota exhausted, retry after reset", file=sys.stderr)
+            return 2
         if result.error:
             print(f"stopped: {result.error}", file=sys.stderr)
             return 2

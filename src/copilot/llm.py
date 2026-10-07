@@ -8,7 +8,8 @@ Studio's OpenAI-compatible Gemini API.
 One endpoint, no SDK: easy to fake and explicit about retries. Free tiers
 rate limit hard, so 429 and 5xx responses are retried with backoff that
 honours `Retry-After`; authentication and request errors are not, because
-retrying them cannot help. Every request caps its output tokens.
+retrying them cannot help - nor is a 429 that says the daily quota is used up.
+Every request caps its output tokens.
 
 The key lives in a `SecretStr` and only in the Authorization header - never
 in an exception, a log line or a repr.
@@ -19,6 +20,7 @@ of deterministic replay (step 76).
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -36,16 +38,42 @@ class LLMError(RuntimeError):
 
     `transient` marks failures worth trying again later - a timeout, a 429 or a 5xx - as
     opposed to ones that will fail the same way every time (a 4xx, a malformed body).
+    `quota` marks a 429 that only the provider's daily reset will clear: not transient.
     """
 
-    def __init__(self, message: str, *, status: int | None = None, transient: bool = False):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        transient: bool = False,
+        quota: bool = False,
+    ):
         super().__init__(message)
         self.status = status
         self.transient = transient
+        self.quota = quota
 
 
 def _transient(status: int) -> bool:
     return status == 429 or 500 <= status < 600
+
+
+_DAILY = re.compile(r"per[ _-]?day|daily", re.IGNORECASE)
+_SOON = re.compile(r"retry in (?:\d+m)?\d+(?:\.\d+)?s", re.IGNORECASE)
+
+
+def _quota_exhausted(status: int, text: str) -> bool:
+    """A 429 that waiting minutes will not fix: the daily quota is used up.
+
+    Google words per-minute and per-day limits alike ("Quota exceeded for metric"), so a
+    quota message counts as daily unless it says to retry within minutes.
+    """
+    if status != 429:
+        return False
+    if _DAILY.search(text):
+        return True
+    return "quota exceeded" in text.lower() and not _SOON.search(text)
 
 
 class EmptyCompletionError(LLMError):
@@ -135,7 +163,8 @@ class OpenRouterLLM:
                     ) from exc
                 self._sleep(float(2**attempt))
                 continue
-            if response.status_code in RETRYABLE and not last:
+            quota = _quota_exhausted(response.status_code, response.text)
+            if response.status_code in RETRYABLE and not last and not quota:
                 self._sleep(_backoff(response, attempt))
                 continue
             if response.status_code >= 400:
@@ -143,7 +172,8 @@ class OpenRouterLLM:
                 raise LLMError(
                     f"provider returned {status}: {_reason(response)}",
                     status=status,
-                    transient=_transient(status),
+                    transient=_transient(status) and not quota,
+                    quota=quota,
                 )
             try:
                 payload = response.json()
@@ -154,13 +184,15 @@ class OpenRouterLLM:
                 # OpenRouter can report an upstream failure inside a 200 response.
                 code = error.get("code")
                 status = code if isinstance(code, int) else 502
-                if status in RETRYABLE and not last:
+                quota = _quota_exhausted(status, str(error.get("message")))
+                if status in RETRYABLE and not last and not quota:
                     self._sleep(float(2**attempt))
                     continue
                 raise LLMError(
                     f"provider returned {status}: {str(error.get('message'))[:300]}",
                     status=status,
-                    transient=_transient(status),
+                    transient=_transient(status) and not quota,
+                    quota=quota,
                 )
             try:
                 return _parse(payload, self.model)
