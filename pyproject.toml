@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "English spec to a validated, tested PySpark notebook and an opened pull request"
 requires-python = ">=3.11"
 dependencies = [
-  "httpx>=0.28",
+  "httpx>=0.28.1",
   "mcp>=2.2",
   "rich>=13",
   "pydantic>=2.13.5",
