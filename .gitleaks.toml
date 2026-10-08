@@ -24,3 +24,12 @@ paths = [
 [[allowlists]]
 description = "Committed example env files"
 paths = ['''(^|/)\.env\.example$''']
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Replay cassettes: each entry is keyed by the SHA-256 hash of its request (ADR-007), not a credential"
+condition = "AND"
+paths = ['''(^|/)[^/]*cassettes/[^/]*\.jsonl$''']
+regexTarget = "match"
+regexes = ['''^key": "[0-9a-f]{64}"$''']
