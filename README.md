@@ -15,7 +15,7 @@ first, then self-correction (5-minute read).
 > **Status:** feature-complete: catalog, agents, sandboxed execution with
 > self-correction, static gate, generated tests, pull requests, MCP tools,
 > replay and the cost governor all work and are tested. The 50-spec eval suite
-> is being recorded in daily batches on a free model tier (3/50 so far);
+> is being recorded in daily batches on a free model tier (4/50 so far);
 > v1.0.0 is tagged when it is complete. Every number links to the run that produced it.
 
 ## The problem
