@@ -1,5 +1,6 @@
 {
   "passed": [
+    "orders-cdc-1",
     "orders-dedup-1",
     "orders-dedup-2",
     "orders-dedup-3"
