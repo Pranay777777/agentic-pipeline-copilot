@@ -14,7 +14,9 @@ Recording is live and slow on free tiers (about 20 requests a day), so it
 is done in batches: `record` skips specs that already have a cassette. A
 transient provider error (timeout, 429, 5xx) is retried after 5 s and 15 s; if
 the spec still fails it is left "pending (transient)" - no cassette, not an eval
-failure - and recording moves on after a 45 s pause. A 429 saying the daily quota
+failure - and recording moves on after a 45 s pause. That backoff is the only
+retry layer: the client is built with its own retries off, so each attempt is
+exactly one HTTP request against the daily quota. A 429 saying the daily quota
 is used up stops the batch at once: no retry, nothing marked pending. Any other
 error stops the batch too, keeping what it recorded. Everything else
 replays cassettes - no model, no key, no network - so the gate runs in CI on
@@ -36,7 +38,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from copilot.agents.base import Catalog
 from copilot.agents.pipeline import Pipeline, Run
@@ -44,6 +46,9 @@ from copilot.catalog.model import read_snapshot
 from copilot.governor import Budget
 from copilot.llm import LLM, LLMError
 from copilot.replay import RecordingLLM, ReplayLLM
+
+if TYPE_CHECKING:
+    from copilot.config import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
 THRESHOLD = 0.8
@@ -163,6 +168,14 @@ def gate(
             f"pass rate {rate:.0%} of {summary['recorded']} recorded is below {threshold:.0%}"
         )
     return not reasons, reasons
+
+
+def live_llm(settings: Settings) -> LLM:
+    """The model `record` uses: the client's own retries off, so the backoff in `record`
+    is the only retry layer and each attempt is exactly one HTTP request."""
+    from copilot.agents.__main__ import make_llm
+
+    return make_llm(settings.model_copy(update={"llm_max_retries": 0}))
 
 
 @dataclass
@@ -294,13 +307,12 @@ def main(argv: list[str] | None = None, make: Any = None, root: Path = ROOT) -> 
 
     if args.command == "record":
         if make is None:  # pragma: no cover - the real model
-            from copilot.agents.__main__ import make_llm
             from copilot.config import get_settings
 
             settings = get_settings()
 
             def make() -> LLM:
-                return make_llm(settings)
+                return live_llm(settings)
 
         chosen = [s for s in specs if args.only in (None, s["id"])]
         if not chosen:
