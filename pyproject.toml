@@ -5,7 +5,7 @@ description = "English spec to a validated, tested PySpark notebook and an opene
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.28",
-  "mcp>=2.2",
+  "mcp>=2.3.0",
   "rich>=13",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.2",
