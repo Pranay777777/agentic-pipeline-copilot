@@ -10,8 +10,9 @@ from typing import Any
 
 import pytest
 
-from copilot.evals import load_specs, main
-from copilot.llm import LLM, LLMError, ScriptedLLM
+from copilot.config import Settings
+from copilot.evals import live_llm, load_specs, main
+from copilot.llm import LLM, LLMError, OpenRouterLLM, ScriptedLLM
 
 Make = Callable[..., dict[str, Any]]
 REPO = Path(__file__).resolve().parents[1]
@@ -255,3 +256,12 @@ def test_an_exhausted_daily_quota_stops_the_batch_at_once(
     assert waits == []  # not retried
     cassettes = root / "evals" / "cassettes"
     assert not (cassettes / "b.jsonl").exists() and not (cassettes / "c.jsonl").exists()
+
+
+def test_recording_builds_the_client_with_its_retries_off() -> None:
+    """The backoff in `record` is the only retry layer: one attempt, one request."""
+    settings = Settings(openrouter_api_key="k", llm_max_retries=3, _env_file=None)  # type: ignore[call-arg,arg-type]
+    llm = live_llm(settings)
+    assert isinstance(llm, OpenRouterLLM)
+    assert llm.max_retries == 0
+    assert settings.llm_max_retries == 3  # other callers keep their setting

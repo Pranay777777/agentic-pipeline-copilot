@@ -262,3 +262,16 @@ def test_a_per_minute_quota_is_a_plain_rate_limit() -> None:
     with pytest.raises(LLMError) as caught:
         client(*[_google_429("1m3s")] * 4).complete([])
     assert (caught.value.quota, caught.value.transient) == (False, True)
+
+
+def test_with_retries_off_a_failure_costs_exactly_one_request() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(503, json={"error": {"message": "busy"}})
+
+    llm = OpenRouterLLM(SecretStr("k"), "m", transport=httpx.MockTransport(handler), max_retries=0)
+    with pytest.raises(LLMError) as caught:
+        llm.complete([])
+    assert len(seen) == 1 and caught.value.transient
