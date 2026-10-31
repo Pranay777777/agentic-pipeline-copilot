@@ -75,3 +75,6 @@ Thumbs.db
 runs/
 notebooks/
 evals/report.json
+
+# graphify knowledge graph (local only)
+graphify-out/
