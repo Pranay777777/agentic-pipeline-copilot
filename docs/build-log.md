@@ -70,7 +70,7 @@ suite has 50 specs; 3 are recorded so far, and all 3 pass.
 One lesson came from the quota. My retry code treated every 429 as temporary.
 A daily-quota 429 is not: waiting a minute does not bring the quota back. The
 batch kept retrying and spending requests for nothing.
-[The fix](https://github.com/Pranay777777/agentic-pipeline-copilot/commit/92ea5e5)
+[The fix](https://github.com/Pranay777777/agentic-pipeline-copilot/commit/d629be1)
 stops the batch at once when the daily quota is used up. v1.0.0 waits until all
 50 specs are recorded.
 
