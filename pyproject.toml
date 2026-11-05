@@ -20,7 +20,7 @@ dev = [
   "mypy>=2.3.1",
   "pre-commit>=4.6.2",
   "pip-audit>=2.10.1",
-  "types-PyYAML>=6.0",
+  "types-PyYAML>=6.0.12.20261030",
   "pillow>=11",
 ]
 
